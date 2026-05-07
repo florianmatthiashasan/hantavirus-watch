@@ -31,15 +31,29 @@ const FEEDS: { source: string; url: string; severity: LiveNewsItem["severity"] }
 const KEYWORDS = ["hanta", "hantavirus", "andes virus", "sin nombre", "puumala", "hcps", "hfrs"];
 
 function stripTags(s: string) {
-  return s
+  const decoded = s
     .replace(/<!\[CDATA\[(.*?)\]\]>/gs, "$1")
-    .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+    .replace(/&#39;/g, "'");
+
+  return decoded
+    .replace(/<[^>]*>/g, " ")
+    .replace(/<[^>\n]*$/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanDescription(s: string) {
+  return s
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\bwww\.\S+/gi, "")
+    .replace(/\bhref\s*=\s*["']?[^"'\s>]+["']?/gi, "")
+    .replace(/[<>]/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -93,7 +107,7 @@ export const getLiveHantaNews = createServerFn({ method: "GET" }).handler(
               source: feed.source,
               severity: feed.severity,
               headline: it.title || "(untitled)",
-              body: it.description.slice(0, 240),
+              body: cleanDescription(it.description).slice(0, 240),
               url: it.link,
             });
           }

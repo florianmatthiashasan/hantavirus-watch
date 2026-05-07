@@ -212,6 +212,21 @@ const PROTOCOL = [
   "TRACE contacts — focus on shared enclosed spaces (cabins, vehicles).",
 ];
 
+const FAQ = [
+  {
+    q: "Is everything updated automatically?",
+    a: "Yes. The dashboard updates automatically, and the live news feed refreshes every 30 minutes.",
+  },
+  {
+    q: "Why are some reports not labeled as outbreaks?",
+    a: "Some items are suspected cases, advisories, or monitoring updates rather than confirmed outbreaks.",
+  },
+  {
+    q: "Is this medical advice?",
+    a: "No. This dashboard is for informational use only and does not replace clinical judgment.",
+  },
+];
+
 // ---------------- Components ----------------
 
 function useClock() {
@@ -521,6 +536,22 @@ function ClinicalPanel() {
   );
 }
 
+function FaqSection() {
+  return (
+    <section className="mx-auto max-w-7xl px-4 py-6">
+      <SectionHead title="FAQ" sub="Quick answers" />
+      <div className="space-y-2 border border-border bg-surface/60 p-4 text-sm">
+        {FAQ.map((item) => (
+          <div key={item.q}>
+            <p className="font-bold text-foreground">{item.q}</p>
+            <p className="text-muted-foreground">{item.a}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Footer() {
   return (
     <footer className="mt-8 border-t border-border bg-surface/60 px-4 py-6 text-[11px] text-muted-foreground">
@@ -549,6 +580,7 @@ function EmergencyRoom() {
       <WorldMap />
       <NewsFeed />
       <ClinicalPanel />
+      <FaqSection />
       <Footer />
     </div>
   );
