@@ -452,7 +452,7 @@ function Topbar({ alertLevel, refreshedAt }: { alertLevel: "normal" | "elevated"
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 text-sm">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-4 py-3 text-sm">
         <div className="font-medium text-foreground">Hantavirus Monitor</div>
         <button
           onClick={toggle}
@@ -460,7 +460,7 @@ function Topbar({ alertLevel, refreshedAt }: { alertLevel: "normal" | "elevated"
         >
           {mode === "dark" ? "Light" : "Dark"}
         </button>
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end sm:gap-3">
           <span className="inline-flex items-center gap-2 text-muted-foreground">
             <span className="h-2 w-2 animate-pulse rounded-full bg-danger" />
             Live {now ? now.toISOString().slice(11, 19) : "--:--:--"} UTC
@@ -532,10 +532,10 @@ function MetricCard({
   return (
     <button
       onClick={onClick}
-      className={`group w-full border bg-card p-4 text-left ${toneCls} ${active ? "ring-1 ring-foreground/25" : ""}`}
+      className={`group w-full border bg-card p-3 text-left md:p-4 ${toneCls} ${active ? "ring-1 ring-foreground/25" : ""}`}
     >
       <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">{label}</div>
-      <div className="mt-1 text-[26px] leading-none font-medium">{value}</div>
+      <div className="mt-1 text-[24px] leading-none font-medium md:text-[26px]">{value}</div>
       <div className="mt-2 text-xs text-muted-foreground opacity-70 transition-opacity group-hover:opacity-100">
         {metricDelta(delta)}
       </div>
@@ -589,7 +589,7 @@ function MetricsRow({ items }: { items: LiveNewsItem[] }) {
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-5">
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <MetricCard
           label="Deaths"
           value={deaths}
@@ -632,7 +632,7 @@ function MetricsRow({ items }: { items: LiveNewsItem[] }) {
               href={x.url}
               target="_blank"
               rel="noreferrer"
-              className="block text-xs text-muted-foreground hover:text-foreground"
+              className="block text-xs leading-5 text-muted-foreground hover:text-foreground"
             >
               {x.source} · {x.time} · {x.headline}
             </a>
@@ -655,12 +655,14 @@ function AlertFeed({ items }: { items: LiveNewsItem[] }) {
             href={n.url}
             target="_blank"
             rel="noreferrer"
-            className={`relative block border border-border border-l-2 ${alertCardBorder(n.severity)} bg-card p-3`}
+            className={`block border border-border border-l-2 ${alertCardBorder(n.severity)} bg-card p-3`}
           >
-            <span className={`absolute right-3 top-3 rounded-full border px-2 py-0.5 text-[10px] ${severityPill(n.severity)}`}>
-              {n.severity.toLowerCase()}
-            </span>
-            <h3 className="pr-20 text-[13px] font-medium text-foreground">{n.headline}</h3>
+            <div className="mb-2 flex items-start justify-between gap-2">
+              <h3 className="text-[13px] font-medium leading-5 text-foreground">{n.headline}</h3>
+              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${severityPill(n.severity)}`}>
+                {n.severity.toLowerCase()}
+              </span>
+            </div>
             <p className="mt-2 text-[11px] text-muted-foreground">
               {n.source} · {n.time}
             </p>
@@ -680,7 +682,7 @@ function IncomingTransmissions() {
           const Icon = transmissionIcon(o);
           const statusLabel = o.status === "ACTIVE" ? "alert" : o.status === "MONITORING" ? "monitoring" : "tracking";
           return (
-            <div key={o.id} className="flex items-start gap-3 border border-border bg-card p-3">
+            <div key={o.id} className="flex flex-wrap items-start gap-2 border border-border bg-card p-3">
               <Icon className="mt-0.5 h-4 w-4 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-foreground">{o.location}</div>
@@ -740,7 +742,7 @@ function WorldMapSection({ items }: { items: LiveNewsItem[] }) {
       <SectionHead title="World map" />
       <div className="relative overflow-hidden border border-border bg-card">
         <OutbreakMap outbreaks={[...OUTBREAKS, ...dynamic]} />
-        <div className="absolute bottom-3 left-3 rounded border border-border bg-card/95 px-3 py-2 text-[11px] text-muted-foreground">
+        <div className="m-2 rounded border border-border bg-card/95 px-3 py-2 text-[11px] text-muted-foreground md:absolute md:bottom-3 md:left-3 md:m-0">
           <div className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full bg-danger" /> deaths / critical
           </div>
@@ -763,7 +765,7 @@ function PublicPulse({ redditQuery }: { redditQuery: ReturnType<typeof useLiveRe
   return (
     <div>
       <SectionHead title="Public pulse" />
-      <div className="mb-2 flex items-center gap-2 text-xs">
+      <div className="mb-2 grid grid-cols-2 gap-2 text-xs">
         <button
           onClick={() => setTab("reddit")}
           className={`border px-3 py-1 ${tab === "reddit" ? "border-danger text-danger" : "border-border text-muted-foreground"}`}
