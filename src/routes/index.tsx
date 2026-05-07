@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { OutbreakMap } from "@/components/OutbreakMap";
+import { getLiveHantaNews, type LiveNewsItem } from "@/lib/news.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -334,121 +337,16 @@ function SectionHead({ title, sub }: { title: string; sub?: string }) {
 
 // Equirectangular projection map
 function WorldMap() {
-  const W = 1000;
-  const H = 500;
-  const project = (lat: number, lng: number) => ({
-    x: ((lng + 180) / 360) * W,
-    y: ((90 - lat) / 180) * H,
-  });
-  const [hover, setHover] = useState<Outbreak | null>(null);
-
   return (
     <section className="mx-auto max-w-7xl px-4 py-6">
-      <SectionHead title="OUTBREAK MAP" sub="Real-time signal · click pins for detail" />
+      <SectionHead title="OUTBREAK MAP" sub="Live · OpenStreetMap · click pins" />
       <div className="relative overflow-hidden border border-border bg-surface/40">
-        <svg viewBox={`0 0 ${W} ${H}`} className="block w-full">
-          {/* grid */}
-          {Array.from({ length: 13 }).map((_, i) => (
-            <line
-              key={"v" + i}
-              x1={(i * W) / 12}
-              y1={0}
-              x2={(i * W) / 12}
-              y2={H}
-              stroke="oklch(0.3 0.04 25 / 0.3)"
-              strokeWidth={1}
-            />
-          ))}
-          {Array.from({ length: 7 }).map((_, i) => (
-            <line
-              key={"h" + i}
-              x1={0}
-              y1={(i * H) / 6}
-              x2={W}
-              y2={(i * H) / 6}
-              stroke="oklch(0.3 0.04 25 / 0.3)"
-              strokeWidth={1}
-            />
-          ))}
-          {/* simple continents silhouette via rough polygons */}
-          <g fill="oklch(0.22 0.025 20)" stroke="oklch(0.35 0.04 30 / 0.6)" strokeWidth={0.7}>
-            {/* North America */}
-            <path d="M120,110 L260,90 L300,150 L280,210 L210,260 L150,240 L110,180 Z" />
-            {/* South America */}
-            <path d="M260,280 L320,260 L330,330 L300,420 L270,440 L255,360 Z" />
-            {/* Europe */}
-            <path d="M470,110 L560,100 L580,150 L540,180 L480,170 Z" />
-            {/* Africa */}
-            <path d="M480,200 L580,200 L600,290 L560,380 L510,360 L480,290 Z" />
-            {/* Asia */}
-            <path d="M580,90 L820,100 L860,180 L800,230 L700,220 L600,180 Z" />
-            {/* Australia */}
-            <path d="M780,330 L880,330 L890,380 L820,400 L780,370 Z" />
-          </g>
-          {/* outbreaks */}
-          {OUTBREAKS.map((o) => {
-            const { x, y } = project(o.lat, o.lng);
-            const r = Math.max(5, Math.min(18, 5 + Math.sqrt(Math.max(o.cases, 1)) * 2));
-            const color =
-              o.status === "ACTIVE"
-                ? "oklch(0.62 0.24 25)"
-                : o.status === "MONITORING"
-                  ? "oklch(0.78 0.18 75)"
-                  : "oklch(0.7 0.18 155)";
-            return (
-              <g
-                key={o.id}
-                onMouseEnter={() => setHover(o)}
-                onMouseLeave={() => setHover(null)}
-                style={{ cursor: "pointer" }}
-              >
-                {o.status === "ACTIVE" && (
-                  <circle cx={x} cy={y} r={r + 6} fill="none" stroke={color} strokeWidth={1.5} opacity={0.4}>
-                    <animate attributeName="r" from={r} to={r + 18} dur="2s" repeatCount="indefinite" />
-                    <animate attributeName="opacity" from="0.7" to="0" dur="2s" repeatCount="indefinite" />
-                  </circle>
-                )}
-                <circle cx={x} cy={y} r={r} fill={color} fillOpacity={0.85} stroke="white" strokeWidth={0.8} />
-                <text x={x + r + 4} y={y + 3} fontSize={10} fill="oklch(0.96 0.01 80)" fontFamily="monospace">
-                  {o.country}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-        {hover && (
-          <div className="pointer-events-none absolute left-3 top-3 max-w-xs border border-border bg-surface/95 p-3 text-xs shadow-lg">
-            <div className="mb-1 flex items-center gap-2">
-              <span
-                className={`px-1.5 py-0.5 text-[9px] font-bold ${
-                  hover.status === "ACTIVE"
-                    ? "bg-danger text-primary-foreground"
-                    : hover.status === "MONITORING"
-                      ? "bg-accent text-accent-foreground"
-                      : "bg-success/20 text-success"
-                }`}
-              >
-                {hover.status}
-              </span>
-              <span className="font-bold">{hover.country}</span>
-            </div>
-            <div className="text-foreground">{hover.location}</div>
-            <div className="mt-1 text-muted-foreground">{hover.note}</div>
-            <div className="mt-2 flex gap-3 text-[11px]">
-              <span>
-                Cases: <b className="text-foreground">{hover.cases}</b>
-              </span>
-              <span>
-                Deaths: <b className="text-danger">{hover.deaths}</b>
-              </span>
-            </div>
-          </div>
-        )}
+        <OutbreakMap outbreaks={OUTBREAKS} />
         <div className="flex flex-wrap items-center gap-4 border-t border-border bg-surface/60 px-3 py-2 text-[10px] text-muted-foreground">
-          <LegendDot color="oklch(0.62 0.24 25)" label="ACTIVE OUTBREAK" />
-          <LegendDot color="oklch(0.78 0.18 75)" label="MONITORING" />
-          <LegendDot color="oklch(0.7 0.18 155)" label="ENDEMIC" />
-          <span className="ml-auto">Equirectangular projection · not to scale</span>
+          <LegendDot color="#f43f5e" label="ACTIVE OUTBREAK" />
+          <LegendDot color="#f59e0b" label="MONITORING" />
+          <LegendDot color="#10b981" label="ENDEMIC" />
+          <span className="ml-auto">Tiles © OpenStreetMap · CARTO</span>
         </div>
       </div>
     </section>
@@ -464,21 +362,90 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
+const REFRESH_MS = 30 * 60 * 1000; // 30 minutes
+
+function useTimeAgo(iso?: string) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(i);
+  }, []);
+  if (!iso) return "—";
+  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ago`;
+}
+
 function NewsFeed() {
+  const query = useQuery({
+    queryKey: ["hanta-news"],
+    queryFn: () => getLiveHantaNews(),
+    refetchInterval: REFRESH_MS,
+    refetchOnWindowFocus: false,
+    staleTime: REFRESH_MS,
+  });
+
+  const live = query.data?.items ?? [];
+  // Merge: live items first, then curated fallback for items not present
+  const merged: (LiveNewsItem | (typeof NEWS)[number])[] =
+    live.length > 0 ? [...live, ...NEWS.slice(0, 4)] : NEWS;
+
+  const lastFetch = query.data?.fetchedAt;
+  const ago = useTimeAgo(lastFetch);
+  const nextRefresh = lastFetch
+    ? new Date(new Date(lastFetch).getTime() + REFRESH_MS).toISOString().slice(11, 16) + " UTC"
+    : "—";
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-6">
-      <SectionHead title="INCOMING TRANSMISSIONS" sub="Source: WHO · ECDC · CDC · RKI · press" />
+      <SectionHead
+        title="INCOMING TRANSMISSIONS"
+        sub={`Live · auto-refresh every 30m · WHO + CDC + Google News RSS`}
+      />
+      <div className="mb-3 flex flex-wrap items-center gap-3 border border-border bg-surface/60 px-3 py-2 text-[11px]">
+        <span className="flex items-center gap-2">
+          <span
+            className={`h-2 w-2 rounded-full ${
+              query.isFetching ? "bg-accent blink" : "bg-success"
+            }`}
+          />
+          {query.isFetching ? "FETCHING…" : "LIVE"}
+        </span>
+        <span className="text-muted-foreground">
+          Last update: <b className="text-foreground">{ago}</b>
+        </span>
+        <span className="text-muted-foreground">
+          Next: <b className="text-foreground">{nextRefresh}</b>
+        </span>
+        <span className="text-muted-foreground">
+          Live items: <b className="text-foreground">{live.length}</b>
+        </span>
+        <button
+          onClick={() => query.refetch()}
+          disabled={query.isFetching}
+          className="ml-auto border border-border px-2 py-1 text-[10px] tracking-widest hover:border-danger hover:text-danger disabled:opacity-50"
+        >
+          ↻ REFRESH NOW
+        </button>
+      </div>
+      {query.isError && (
+        <div className="mb-3 border border-danger/50 bg-danger/10 p-3 text-xs text-danger">
+          Live feed unavailable — showing curated fallback. ({String(query.error)})
+        </div>
+      )}
       <div className="grid gap-3 md:grid-cols-2">
-        {NEWS.map((n, i) => {
+        {merged.map((n, i) => {
           const sevCls =
             n.severity === "CRITICAL"
               ? "border-danger text-danger"
               : n.severity === "HIGH"
                 ? "border-accent text-accent"
                 : "border-border text-muted-foreground";
+          const isLive = "iso" in n;
           return (
             <a
-              key={i}
+              key={`${n.url}-${i}`}
               href={n.url}
               target="_blank"
               rel="noreferrer"
@@ -489,6 +456,11 @@ function NewsFeed() {
                   {n.severity}
                 </span>
                 <span className="text-muted-foreground">{n.source}</span>
+                {isLive && (
+                  <span className="border border-success/60 px-1 py-0.5 text-[9px] text-success">
+                    LIVE
+                  </span>
+                )}
                 <span className="ml-auto text-muted-foreground">{n.time}</span>
               </div>
               <h3 className="mt-2 font-bold leading-snug text-foreground group-hover:text-danger">
