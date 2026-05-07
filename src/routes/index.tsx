@@ -759,29 +759,19 @@ function WorldMapSection({ items }: { items: LiveNewsItem[] }) {
 }
 
 function PublicPulse({ redditQuery }: { redditQuery: ReturnType<typeof useLiveReddit> }) {
-  const [tab, setTab] = useState<"reddit" | "x">("reddit");
   const reddit = redditQuery.data?.items ?? [];
+  const isError = redditQuery.isError;
 
   return (
     <div>
       <SectionHead title="Public pulse" />
-      <div className="mb-2 grid grid-cols-2 gap-2 text-xs">
-        <button
-          onClick={() => setTab("reddit")}
-          className={`border px-3 py-1 ${tab === "reddit" ? "border-danger text-danger" : "border-border text-muted-foreground"}`}
-        >
-          Reddit
-        </button>
-        <button
-          onClick={() => setTab("x")}
-          className={`border px-3 py-1 ${tab === "x" ? "border-danger text-danger" : "border-border text-muted-foreground"}`}
-        >
-          Twitter/X
-        </button>
+      <div className="mb-2 flex items-center gap-2 text-xs">
+        <span className="border border-danger px-3 py-1 text-danger">Reddit</span>
+        {redditQuery.isFetching && <span className="text-muted-foreground">Updating…</span>}
       </div>
 
       <div className="space-y-2">
-        {tab === "reddit" &&
+        {!isError &&
           reddit.slice(0, 8).map((p) => (
             <a
               key={p.id}
@@ -796,15 +786,19 @@ function PublicPulse({ redditQuery }: { redditQuery: ReturnType<typeof useLiveRe
               </div>
             </a>
           ))}
-
-        {tab === "x" && (
+        {!isError && reddit.length === 0 && (
+          <div className="border border-border bg-card p-3 text-sm text-muted-foreground">
+            No Reddit items in the current refresh window.
+          </div>
+        )}
+        {isError && (
           <a
-            href="https://x.com/search?q=hantavirus&f=live"
+            href="https://www.reddit.com/search/?q=hantavirus&sort=new"
             target="_blank"
             rel="noreferrer"
-            className="block border border-border bg-card p-3 text-sm text-muted-foreground"
+            className="block border border-danger/40 bg-danger/10 p-3 text-sm text-danger"
           >
-            Open live X search for hantavirus signals.
+            Reddit feed unavailable right now. Open Reddit search directly.
           </a>
         )}
       </div>
