@@ -1,8 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { OutbreakMap } from "@/components/OutbreakMap";
-import { getLiveHantaNews, type LiveNewsItem } from "@/lib/news.functions";
+import {
+  getLiveHantaNews,
+  type CaseStatus,
+  type LiveNewsItem,
+  type SourceType,
+} from "@/lib/news.functions";
 import { getLiveHantaReddit } from "@/lib/reddit.functions";
 
 export const Route = createFileRoute("/")({
@@ -120,12 +125,20 @@ const OUTBREAKS: Outbreak[] = [
 ];
 
 type NewsItem = {
+  id: string;
+  iso?: string;
   time: string;
   source: string;
+  sourceType: SourceType;
   severity: "CRITICAL" | "HIGH" | "INFO";
   headline: string;
   body: string;
   url: string;
+  caseStatus: CaseStatus;
+  confidenceScore: number;
+  confidenceLabel: "HIGH" | "MEDIUM" | "LOW";
+  signalReason: string;
+  lastVerifiedAt: string;
 };
 
 type LiveLocationRule = {
@@ -139,60 +152,116 @@ type LiveLocationRule = {
 
 const NEWS: NewsItem[] = [
   {
+    id: "fallback-rki-2026-05-07",
+    iso: "2026-05-07T14:22:00.000Z",
     time: "07 May 2026 · 14:22 UTC",
     source: "RKI",
+    sourceType: "OFFICIAL",
     severity: "HIGH",
     headline: "RKI updates guidance on cruise-ship hantavirus outbreak",
     body: "Robert Koch-Institut confirms outbreak on Dutch-flagged vessel that left southern Argentina on 1 April. Andes virus suspected.",
     url: "https://www.rki.de/DE/Themen/Infektionskrankheiten/Infektionskrankheiten-A-Z/H/Hantavirus/Hanta_Kreuzfahrtschiff_2026.html",
+    caseStatus: "PROBABLE",
+    confidenceScore: 90,
+    confidenceLabel: "HIGH",
+    signalReason: "curated=official bulletin",
+    lastVerifiedAt: "2026-05-07T14:22:00.000Z",
   },
   {
+    id: "fallback-ecdc-2026-05-06",
+    iso: "2026-05-06T18:40:00.000Z",
     time: "06 May 2026 · 18:40 UTC",
     source: "ECDC",
+    sourceType: "OFFICIAL",
     severity: "HIGH",
     headline: "ECDC: 7 cases in cruise-ship cluster — risk to EU public 'very low'",
     body: "Rapid risk assessment published. Two lab-confirmed, five probable. Investigation into possible human-to-human transmission ongoing.",
     url: "https://www.ecdc.europa.eu/en/publications-data/hantavirus-associated-cluster-illness-cruise-ship-ecdc-assessment-and",
+    caseStatus: "CONFIRMED",
+    confidenceScore: 96,
+    confidenceLabel: "HIGH",
+    signalReason: "curated=official risk assessment",
+    lastVerifiedAt: "2026-05-06T18:40:00.000Z",
   },
   {
+    id: "fallback-who-2026-05-05",
+    iso: "2026-05-05T23:10:00.000Z",
     time: "05 May 2026 · 23:10 UTC",
     source: "WHO",
+    sourceType: "OFFICIAL",
     severity: "CRITICAL",
     headline: "WHO DON599 — Hantavirus cluster linked to cruise-ship travel, multi-country",
     body: "147 passengers and crew. 7 cases reported including 3 deaths, 1 critical, 3 mild. Outbreak under multi-country coordination.",
     url: "https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON599",
+    caseStatus: "CONFIRMED",
+    confidenceScore: 96,
+    confidenceLabel: "HIGH",
+    signalReason: "curated=WHO DON",
+    lastVerifiedAt: "2026-05-05T23:10:00.000Z",
   },
   {
+    id: "fallback-zeit-2026-05-05",
+    iso: "2026-05-05T16:05:00.000Z",
     time: "05 May 2026 · 16:05 UTC",
     source: "DIE ZEIT",
+    sourceType: "MEDIA",
     severity: "HIGH",
     headline: "Bis zu sieben mögliche Hantavirus-Fälle auf Kreuzfahrtschiff",
     body: "Zwei labor­bestätigte und fünf mutmaßliche Fälle, drei Tote. Schiff sitzt vor Kap Verde fest.",
     url: "https://www.zeit.de/gesellschaft/zeitgeschehen/2026-05/hantavirus-kreuzfahrtschiff-infektion-tote-kap-verde",
+    caseStatus: "SUSPECTED",
+    confidenceScore: 56,
+    confidenceLabel: "MEDIUM",
+    signalReason: "curated=media report",
+    lastVerifiedAt: "2026-05-05T16:05:00.000Z",
   },
   {
+    id: "fallback-tonline-2026-05-05",
+    iso: "2026-05-05T09:30:00.000Z",
     time: "05 May 2026 · 09:30 UTC",
     source: "t-online",
+    sourceType: "MEDIA",
     severity: "INFO",
     headline: "Hantavirus: Risikogebiete in Köln und NRW ausgewiesen",
     body: "Erste Fälle 2026 in Nordrhein-Westfalen gemeldet. Behörden weisen auf Puumala-Risikogebiete hin.",
     url: "https://koeln.t-online.de/region/koeln/id_101241444/hantavirus-risikogebiete-in-koeln-und-nrw-ausgewiesen-erste-faelle.html",
+    caseStatus: "ADVISORY",
+    confidenceScore: 50,
+    confidenceLabel: "MEDIUM",
+    signalReason: "curated=regional advisory",
+    lastVerifiedAt: "2026-05-05T09:30:00.000Z",
   },
   {
+    id: "fallback-argmoh-2026-05-04",
+    iso: "2026-05-04T21:00:00.000Z",
     time: "04 May 2026 · 21:00 UTC",
     source: "Argentina MoH",
+    sourceType: "OFFICIAL",
     severity: "HIGH",
     headline: "Argentina: 41 cases in 2026 — 'above epidemic threshold'",
     body: "Health ministry reports stronger spread than previous seasons. Andes virus circulation increasing.",
     url: "https://www.unionesarda.it/de/welt/hantavirus-argentinien-stellt-klar-im-jahr-2026-wurden-bereits-41-infektionsfalle-registriert-vs2nlovi",
+    caseStatus: "PROBABLE",
+    confidenceScore: 88,
+    confidenceLabel: "HIGH",
+    signalReason: "curated=official statement",
+    lastVerifiedAt: "2026-05-04T21:00:00.000Z",
   },
   {
+    id: "fallback-cdc-2026-04-23",
+    iso: "2026-04-23T12:00:00.000Z",
     time: "23 Apr 2026 · 12:00 UTC",
     source: "CDC",
+    sourceType: "OFFICIAL",
     severity: "INFO",
     headline: "CDC: Sin Nombre virus does NOT spread person-to-person",
     body: "Surveillance continues across Four Corners. Public reminder: rodent exposure remains the primary transmission route in the US.",
     url: "https://www.cdc.gov/hantavirus/data-research/cases/index.html",
+    caseStatus: "ADVISORY",
+    confidenceScore: 78,
+    confidenceLabel: "HIGH",
+    signalReason: "curated=official guidance",
+    lastVerifiedAt: "2026-04-23T12:00:00.000Z",
   },
 ];
 
@@ -293,6 +362,20 @@ const LIVE_LOCATION_RULES: LiveLocationRule[] = [
 const SUSPECT_RE = /\b(suspect|suspected|possible|probable|under investigation|verdacht|mutmasslich)\b/i;
 const CASE_RE = /\b(case|cases|cluster|confirmed|infection|infektion|outbreak)\b/i;
 const DEATH_RE = /\b(death|deaths|dead|tote|gestorben)\b/i;
+const SOURCE_FILTERS = ["ALL", "OFFICIAL", "MEDIA", "AGGREGATOR"] as const;
+const CASE_FILTERS = ["ALL", "CONFIRMED", "PROBABLE", "SUSPECTED", "ADVISORY"] as const;
+
+type SourceFilter = (typeof SOURCE_FILTERS)[number];
+type CaseFilter = (typeof CASE_FILTERS)[number];
+type DisplayNewsItem = LiveNewsItem & { id: string; isLive: boolean };
+
+function confidenceCls(label: "HIGH" | "MEDIUM" | "LOW") {
+  return label === "HIGH"
+    ? "border-success/60 text-success"
+    : label === "MEDIUM"
+      ? "border-accent/60 text-accent"
+      : "border-danger/60 text-danger";
+}
 
 function useLiveNews() {
   return useQuery({
@@ -330,11 +413,18 @@ function buildLiveSignalOutbreaks(liveItems: LiveNewsItem[]): Outbreak[] {
     const lat = rule.lat + Math.sin(angle) * spread;
     const lng = rule.lng + Math.cos(angle) * spread;
 
-    const suspected = SUSPECT_RE.test(text);
-    const caseSignal = CASE_RE.test(text);
+    const suspected = item.caseStatus === "SUSPECTED" || SUSPECT_RE.test(text);
+    const caseSignal =
+      item.caseStatus === "CONFIRMED" ||
+      item.caseStatus === "PROBABLE" ||
+      CASE_RE.test(text);
     const deathSignal = DEATH_RE.test(text);
     const status: Outbreak["status"] =
-      deathSignal || caseSignal || item.severity === "CRITICAL" ? "ACTIVE" : "MONITORING";
+      deathSignal || caseSignal || item.severity === "CRITICAL"
+        ? "ACTIVE"
+        : item.caseStatus === "ADVISORY"
+          ? "ENDEMIC"
+          : "MONITORING";
 
     const signalType = suspected ? "suspected" : caseSignal ? "case" : "alert";
     return [
@@ -381,7 +471,7 @@ function TopBar() {
           UTC {now ? now.toISOString().slice(11, 19) : "--:--:--"}
         </span>
         <span className="rounded border border-border px-2 py-0.5 text-muted-foreground">
-          SRC: WHO · ECDC · CDC · RKI
+          SRC: WHO · CDC · Google News · Reddit
         </span>
       </div>
     </header>
@@ -523,9 +613,75 @@ function useTimeAgo(iso?: string) {
 
 function NewsFeed({ query }: { query: ReturnType<typeof useLiveNews> }) {
   const live = query.data?.items ?? [];
-  // Merge: live items first, then curated fallback for items not present
-  const merged: (LiveNewsItem | (typeof NEWS)[number])[] =
-    live.length > 0 ? [...live, ...NEWS.slice(0, 4)] : NEWS;
+  const sourceHealth = query.data?.sourceHealth ?? [];
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("ALL");
+  const [caseFilter, setCaseFilter] = useState<CaseFilter>("ALL");
+  const [newSinceLast, setNewSinceLast] = useState(0);
+  const previousLiveIds = useRef<Set<string>>(new Set());
+
+  const liveDisplay = useMemo<DisplayNewsItem[]>(
+    () =>
+      live.map((n, i) => ({
+        ...n,
+        id: `live-${n.url || n.iso}-${i}`,
+        isLive: true,
+      })),
+    [live],
+  );
+
+  const fallbackDisplay = useMemo<DisplayNewsItem[]>(
+    () =>
+      NEWS.map((n) => ({
+        ...n,
+        iso: n.iso ?? n.lastVerifiedAt,
+        id: n.id,
+        isLive: false,
+      })),
+    [],
+  );
+
+  const merged = useMemo(() => {
+    const base = liveDisplay.length > 0 ? [...liveDisplay, ...fallbackDisplay] : fallbackDisplay;
+    const seen = new Set<string>();
+    return base.filter((item) => {
+      const key = `${item.url}|${item.headline.toLowerCase().replace(/\s+/g, " ")}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [liveDisplay, fallbackDisplay]);
+
+  const filtered = useMemo(
+    () =>
+      merged.filter((item) => {
+        const sourceOk = sourceFilter === "ALL" || item.sourceType === sourceFilter;
+        const caseOk = caseFilter === "ALL" || item.caseStatus === caseFilter;
+        return sourceOk && caseOk;
+      }),
+    [merged, sourceFilter, caseFilter],
+  );
+
+  useEffect(() => {
+    if (liveDisplay.length === 0) {
+      setNewSinceLast(0);
+      return;
+    }
+
+    const current = new Set(liveDisplay.map((x) => x.url || x.id));
+    const prev = previousLiveIds.current;
+    if (prev.size === 0) {
+      previousLiveIds.current = current;
+      setNewSinceLast(0);
+      return;
+    }
+
+    let delta = 0;
+    current.forEach((id) => {
+      if (!prev.has(id)) delta += 1;
+    });
+    setNewSinceLast(delta);
+    previousLiveIds.current = current;
+  }, [liveDisplay]);
 
   const lastFetch = query.data?.fetchedAt;
   const ago = useTimeAgo(lastFetch);
@@ -557,6 +713,9 @@ function NewsFeed({ query }: { query: ReturnType<typeof useLiveNews> }) {
         <span className="text-muted-foreground">
           Live items: <b className="text-foreground">{live.length}</b>
         </span>
+        <span className="text-muted-foreground">
+          New since last refresh: <b className="text-foreground">{newSinceLast}</b>
+        </span>
         <button
           onClick={() => query.refetch()}
           disabled={query.isFetching}
@@ -570,18 +729,63 @@ function NewsFeed({ query }: { query: ReturnType<typeof useLiveNews> }) {
           Live feed unavailable — showing curated fallback. ({String(query.error)})
         </div>
       )}
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] tracking-widest">
+        <span className="text-muted-foreground">SOURCE</span>
+        {SOURCE_FILTERS.map((f) => (
+          <button
+            key={f}
+            onClick={() => setSourceFilter(f)}
+            className={`border px-2 py-1 ${
+              sourceFilter === f
+                ? "border-danger text-danger"
+                : "border-border text-muted-foreground hover:border-danger/60"
+            }`}
+          >
+            {f}
+          </button>
+        ))}
+        <span className="ml-3 text-muted-foreground">CASE</span>
+        {CASE_FILTERS.map((f) => (
+          <button
+            key={f}
+            onClick={() => setCaseFilter(f)}
+            className={`border px-2 py-1 ${
+              caseFilter === f
+                ? "border-danger text-danger"
+                : "border-border text-muted-foreground hover:border-danger/60"
+            }`}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+      {sourceHealth.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] tracking-widest">
+          <span className="text-muted-foreground">SOURCE HEALTH</span>
+          {sourceHealth.map((h) => (
+            <span
+              key={h.source}
+              className={`border px-2 py-1 ${
+                h.status === "ok" ? "border-success/60 text-success" : "border-danger/60 text-danger"
+              }`}
+              title={h.detail || ""}
+            >
+              {h.source}:{h.status.toUpperCase()}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="grid gap-3 md:grid-cols-2">
-        {merged.map((n, i) => {
+        {filtered.map((n) => {
           const sevCls =
             n.severity === "CRITICAL"
               ? "border-danger text-danger"
               : n.severity === "HIGH"
                 ? "border-accent text-accent"
                 : "border-border text-muted-foreground";
-          const isLive = "iso" in n;
           return (
             <a
-              key={`${n.url}-${i}`}
+              key={n.id}
               href={n.url}
               target="_blank"
               rel="noreferrer"
@@ -591,8 +795,17 @@ function NewsFeed({ query }: { query: ReturnType<typeof useLiveNews> }) {
                 <span className={`border px-1.5 py-0.5 font-bold ${sevCls}`}>
                   {n.severity}
                 </span>
+                <span className="border border-border px-1.5 py-0.5 text-muted-foreground">
+                  {n.sourceType}
+                </span>
+                <span className="border border-border px-1.5 py-0.5 text-foreground">
+                  {n.caseStatus}
+                </span>
+                <span className={`border px-1.5 py-0.5 ${confidenceCls(n.confidenceLabel)}`}>
+                  CONF {n.confidenceScore}
+                </span>
                 <span className="text-muted-foreground">{n.source}</span>
-                {isLive && (
+                {n.isLive && (
                   <span className="border border-success/60 px-1 py-0.5 text-[9px] text-success">
                     LIVE
                   </span>
@@ -603,6 +816,9 @@ function NewsFeed({ query }: { query: ReturnType<typeof useLiveNews> }) {
                 {n.headline}
               </h3>
               <p className="mt-1 text-xs text-muted-foreground">{n.body}</p>
+              <div className="mt-1 text-[10px] text-muted-foreground">
+                WHY: {n.signalReason} · verified {n.lastVerifiedAt.slice(0, 16).replace("T", " ")} UTC
+              </div>
               <div className="mt-2 text-[10px] tracking-widest text-danger opacity-70">
                 ▸ READ SOURCE
               </div>
@@ -665,6 +881,15 @@ function SocialPulse({ query }: { query: ReturnType<typeof useLiveReddit> }) {
                 <span className="border border-border px-1.5 py-0.5 text-muted-foreground">
                   r/{p.subreddit}
                 </span>
+                <span className="border border-border px-1.5 py-0.5 text-muted-foreground">
+                  {p.sourceType}
+                </span>
+                <span className="border border-border px-1.5 py-0.5 text-foreground">
+                  {p.caseStatus}
+                </span>
+                <span className={`border px-1.5 py-0.5 ${confidenceCls(p.confidenceLabel)}`}>
+                  CONF {p.confidenceScore}
+                </span>
                 <span className="text-danger">u/{p.author}</span>
                 <span className="ml-auto text-muted-foreground">{p.time}</span>
               </div>
@@ -677,6 +902,11 @@ function SocialPulse({ query }: { query: ReturnType<typeof useLiveReddit> }) {
               </div>
             </a>
           ))}
+          {posts.length === 0 && (
+            <div className="border border-border bg-surface/60 p-4 text-xs text-muted-foreground">
+              No recent reddit signals matched the query in the current window.
+            </div>
+          )}
         </div>
       )}
       <div className="mt-2 text-[11px] text-muted-foreground">
