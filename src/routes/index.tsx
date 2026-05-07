@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { OutbreakMap } from "@/components/OutbreakMap";
+import { getLiveHantaNews, type LiveNewsItem } from "@/lib/news.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
