@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { OutbreakMap } from "@/components/OutbreakMap";
 import { getLiveHantaNews, type LiveNewsItem } from "@/lib/news.functions";
+import { getLiveHantaReddit } from "@/lib/reddit.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -297,6 +298,16 @@ function useLiveNews() {
   return useQuery({
     queryKey: ["hanta-news"],
     queryFn: () => getLiveHantaNews(),
+    refetchInterval: REFRESH_MS,
+    refetchOnWindowFocus: false,
+    staleTime: REFRESH_MS,
+  });
+}
+
+function useLiveReddit() {
+  return useQuery({
+    queryKey: ["hanta-reddit"],
+    queryFn: () => getLiveHantaReddit(),
     refetchInterval: REFRESH_MS,
     refetchOnWindowFocus: false,
     staleTime: REFRESH_MS,
@@ -603,6 +614,78 @@ function NewsFeed({ query }: { query: ReturnType<typeof useLiveNews> }) {
   );
 }
 
+function SocialPulse({ query }: { query: ReturnType<typeof useLiveReddit> }) {
+  const posts = query.data?.items ?? [];
+  const lastFetch = query.data?.fetchedAt;
+  const ago = useTimeAgo(lastFetch);
+
+  return (
+    <section className="mx-auto max-w-7xl px-4 py-6">
+      <SectionHead title="REDDIT PULSE" sub="Public user posts · API feed (30m)" />
+      <div className="mb-3 flex flex-wrap items-center gap-3 border border-border bg-surface/60 px-3 py-2 text-[11px]">
+        <span className="flex items-center gap-2">
+          <span
+            className={`h-2 w-2 rounded-full ${
+              query.isFetching ? "bg-accent blink" : "bg-success"
+            }`}
+          />
+          {query.isFetching ? "FETCHING…" : "LIVE"}
+        </span>
+        <span className="text-muted-foreground">
+          Last update: <b className="text-foreground">{ago}</b>
+        </span>
+        <span className="text-muted-foreground">
+          Posts: <b className="text-foreground">{posts.length}</b>
+        </span>
+      </div>
+      {query.isError && (
+        <div className="border border-danger/50 bg-danger/10 p-3 text-xs text-danger">
+          Reddit feed unavailable. Open search directly:
+          <a
+            href="https://www.reddit.com/search/?q=hantavirus&sort=new"
+            target="_blank"
+            rel="noreferrer"
+            className="ml-1 font-bold underline"
+          >
+            reddit.com/search/?q=hantavirus&sort=new
+          </a>
+        </div>
+      )}
+      {!query.isError && (
+        <div className="grid gap-3 md:grid-cols-2">
+          {posts.map((p) => (
+            <a
+              key={p.id}
+              href={p.url}
+              target="_blank"
+              rel="noreferrer"
+              className="group block border border-border bg-surface/60 p-4 transition hover:border-danger/60 hover:bg-surface"
+            >
+              <div className="flex items-center gap-2 text-[10px] tracking-widest">
+                <span className="border border-border px-1.5 py-0.5 text-muted-foreground">
+                  r/{p.subreddit}
+                </span>
+                <span className="text-danger">u/{p.author}</span>
+                <span className="ml-auto text-muted-foreground">{p.time}</span>
+              </div>
+              <h3 className="mt-2 font-bold leading-snug text-foreground group-hover:text-danger">
+                {p.title}
+              </h3>
+              {p.body ? <p className="mt-1 text-xs text-muted-foreground">{p.body}</p> : null}
+              <div className="mt-2 text-[10px] tracking-widest text-muted-foreground">
+                SCORE {p.score} · COMMENTS {p.comments}
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 text-[11px] text-muted-foreground">
+        Source: Reddit recent search for hantavirus terms. Auto-refresh every 30 minutes.
+      </div>
+    </section>
+  );
+}
+
 function ClinicalPanel() {
   return (
     <section className="mx-auto grid max-w-7xl gap-6 px-4 py-6 md:grid-cols-2">
@@ -683,6 +766,7 @@ function Footer() {
 
 function EmergencyRoom() {
   const liveQuery = useLiveNews();
+  const socialQuery = useLiveReddit();
   const liveItems = liveQuery.data?.items ?? [];
 
   return (
@@ -692,6 +776,7 @@ function EmergencyRoom() {
       <Stats />
       <WorldMap liveItems={liveItems} />
       <NewsFeed query={liveQuery} />
+      <SocialPulse query={socialQuery} />
       <ClinicalPanel />
       <FaqSection />
       <Footer />
