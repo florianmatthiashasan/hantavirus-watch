@@ -337,121 +337,16 @@ function SectionHead({ title, sub }: { title: string; sub?: string }) {
 
 // Equirectangular projection map
 function WorldMap() {
-  const W = 1000;
-  const H = 500;
-  const project = (lat: number, lng: number) => ({
-    x: ((lng + 180) / 360) * W,
-    y: ((90 - lat) / 180) * H,
-  });
-  const [hover, setHover] = useState<Outbreak | null>(null);
-
   return (
     <section className="mx-auto max-w-7xl px-4 py-6">
-      <SectionHead title="OUTBREAK MAP" sub="Real-time signal · click pins for detail" />
+      <SectionHead title="OUTBREAK MAP" sub="Live · OpenStreetMap · click pins" />
       <div className="relative overflow-hidden border border-border bg-surface/40">
-        <svg viewBox={`0 0 ${W} ${H}`} className="block w-full">
-          {/* grid */}
-          {Array.from({ length: 13 }).map((_, i) => (
-            <line
-              key={"v" + i}
-              x1={(i * W) / 12}
-              y1={0}
-              x2={(i * W) / 12}
-              y2={H}
-              stroke="oklch(0.3 0.04 25 / 0.3)"
-              strokeWidth={1}
-            />
-          ))}
-          {Array.from({ length: 7 }).map((_, i) => (
-            <line
-              key={"h" + i}
-              x1={0}
-              y1={(i * H) / 6}
-              x2={W}
-              y2={(i * H) / 6}
-              stroke="oklch(0.3 0.04 25 / 0.3)"
-              strokeWidth={1}
-            />
-          ))}
-          {/* simple continents silhouette via rough polygons */}
-          <g fill="oklch(0.22 0.025 20)" stroke="oklch(0.35 0.04 30 / 0.6)" strokeWidth={0.7}>
-            {/* North America */}
-            <path d="M120,110 L260,90 L300,150 L280,210 L210,260 L150,240 L110,180 Z" />
-            {/* South America */}
-            <path d="M260,280 L320,260 L330,330 L300,420 L270,440 L255,360 Z" />
-            {/* Europe */}
-            <path d="M470,110 L560,100 L580,150 L540,180 L480,170 Z" />
-            {/* Africa */}
-            <path d="M480,200 L580,200 L600,290 L560,380 L510,360 L480,290 Z" />
-            {/* Asia */}
-            <path d="M580,90 L820,100 L860,180 L800,230 L700,220 L600,180 Z" />
-            {/* Australia */}
-            <path d="M780,330 L880,330 L890,380 L820,400 L780,370 Z" />
-          </g>
-          {/* outbreaks */}
-          {OUTBREAKS.map((o) => {
-            const { x, y } = project(o.lat, o.lng);
-            const r = Math.max(5, Math.min(18, 5 + Math.sqrt(Math.max(o.cases, 1)) * 2));
-            const color =
-              o.status === "ACTIVE"
-                ? "oklch(0.62 0.24 25)"
-                : o.status === "MONITORING"
-                  ? "oklch(0.78 0.18 75)"
-                  : "oklch(0.7 0.18 155)";
-            return (
-              <g
-                key={o.id}
-                onMouseEnter={() => setHover(o)}
-                onMouseLeave={() => setHover(null)}
-                style={{ cursor: "pointer" }}
-              >
-                {o.status === "ACTIVE" && (
-                  <circle cx={x} cy={y} r={r + 6} fill="none" stroke={color} strokeWidth={1.5} opacity={0.4}>
-                    <animate attributeName="r" from={r} to={r + 18} dur="2s" repeatCount="indefinite" />
-                    <animate attributeName="opacity" from="0.7" to="0" dur="2s" repeatCount="indefinite" />
-                  </circle>
-                )}
-                <circle cx={x} cy={y} r={r} fill={color} fillOpacity={0.85} stroke="white" strokeWidth={0.8} />
-                <text x={x + r + 4} y={y + 3} fontSize={10} fill="oklch(0.96 0.01 80)" fontFamily="monospace">
-                  {o.country}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-        {hover && (
-          <div className="pointer-events-none absolute left-3 top-3 max-w-xs border border-border bg-surface/95 p-3 text-xs shadow-lg">
-            <div className="mb-1 flex items-center gap-2">
-              <span
-                className={`px-1.5 py-0.5 text-[9px] font-bold ${
-                  hover.status === "ACTIVE"
-                    ? "bg-danger text-primary-foreground"
-                    : hover.status === "MONITORING"
-                      ? "bg-accent text-accent-foreground"
-                      : "bg-success/20 text-success"
-                }`}
-              >
-                {hover.status}
-              </span>
-              <span className="font-bold">{hover.country}</span>
-            </div>
-            <div className="text-foreground">{hover.location}</div>
-            <div className="mt-1 text-muted-foreground">{hover.note}</div>
-            <div className="mt-2 flex gap-3 text-[11px]">
-              <span>
-                Cases: <b className="text-foreground">{hover.cases}</b>
-              </span>
-              <span>
-                Deaths: <b className="text-danger">{hover.deaths}</b>
-              </span>
-            </div>
-          </div>
-        )}
+        <OutbreakMap outbreaks={OUTBREAKS} />
         <div className="flex flex-wrap items-center gap-4 border-t border-border bg-surface/60 px-3 py-2 text-[10px] text-muted-foreground">
-          <LegendDot color="oklch(0.62 0.24 25)" label="ACTIVE OUTBREAK" />
-          <LegendDot color="oklch(0.78 0.18 75)" label="MONITORING" />
-          <LegendDot color="oklch(0.7 0.18 155)" label="ENDEMIC" />
-          <span className="ml-auto">Equirectangular projection · not to scale</span>
+          <LegendDot color="#f43f5e" label="ACTIVE OUTBREAK" />
+          <LegendDot color="#f59e0b" label="MONITORING" />
+          <LegendDot color="#10b981" label="ENDEMIC" />
+          <span className="ml-auto">Tiles © OpenStreetMap · CARTO</span>
         </div>
       </div>
     </section>
