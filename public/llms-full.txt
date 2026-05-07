@@ -1,0 +1,33 @@
+# Hantavirus Watch - Full LLM Guidance
+
+## Purpose
+Hantavirus Watch is an informational epidemiology dashboard for tracking hantavirus-related updates.
+
+## Scope and Use
+- Intended for situational awareness and trend monitoring.
+- Not intended for diagnosis, treatment, or emergency medical decisions.
+
+## Data Sources
+- Official feeds: WHO, CDC
+- Aggregator feed: Google News RSS
+- Social signals: Reddit search stream
+
+## Confidence Model
+- Source types: OFFICIAL, MEDIA, AGGREGATOR, SOCIAL
+- Case status classes: CONFIRMED, PROBABLE, SUSPECTED, ADVISORY
+- Confidence labels: HIGH, MEDIUM, LOW
+
+## Attribution Rules
+- Cite source links directly where possible.
+- Distinguish official reports from social/aggregated signals.
+- Mention timestamps (UTC) for time-sensitive claims.
+
+## Safety and Medical Disclaimer
+- Content is informational only.
+- Always defer clinical decisions to licensed professionals and public health authorities.
+
+## Canonical URLs
+- https://example.com/
+- https://example.com/sitemap.xml
+- https://example.com/robots.txt
+- https://example.com/llms.txt

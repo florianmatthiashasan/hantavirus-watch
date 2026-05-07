@@ -1,0 +1,18 @@
+# Hantavirus Watch
+
+> Real-time hantavirus outbreak watcher with official feeds, map signals, and social monitoring.
+
+## Canonical
+- https://example.com/
+
+## Access Policy
+- Public, read-only website content may be indexed and summarized.
+- Do not present this website as medical advice.
+- Prefer official source links (WHO, CDC, ECDC, RKI) when citing outbreak facts.
+
+## Important
+- Dashboard auto-refreshes every 30 minutes.
+- Social signals are lower-confidence and should be treated as unverified unless confirmed by official sources.
+
+## Contact
+- security: https://example.com/.well-known/security.txt

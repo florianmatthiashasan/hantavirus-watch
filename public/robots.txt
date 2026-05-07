@@ -1,0 +1,43 @@
+# robots.txt for Hantavirus Watch
+# Replace https://example.com with your production domain before launch.
+
+User-agent: *
+Allow: /
+Disallow: /.git/
+Disallow: /.tanstack/
+Disallow: /.wrangler/
+Disallow: /node_modules/
+Disallow: /dist/
+Disallow: /dist-ssr/
+Disallow: /_nitro/
+Disallow: /__tanstack/
+
+# AI crawlers
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+# Crawl hints
+Crawl-delay: 2
+
+Sitemap: https://example.com/sitemap.xml
