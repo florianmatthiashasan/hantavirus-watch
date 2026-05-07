@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, MapPin, Plane, Ship } from "lucide-react";
 import { OutbreakMap } from "@/components/OutbreakMap";
 import { getLiveHantaNews, type LiveNewsItem } from "@/lib/news.functions";
-import { getLiveHantaReddit } from "@/lib/reddit.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -250,7 +249,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "Where do the sources come from?",
-    a: "From official agencies (for example WHO and CDC), news feeds, and public Reddit signals.",
+    a: "From official agencies (for example WHO and CDC) plus curated/public news feeds.",
   },
   {
     q: "Are social signals verified?",
@@ -275,16 +274,6 @@ function useLiveNews() {
   return useQuery({
     queryKey: ["hanta-news"],
     queryFn: () => getLiveHantaNews(),
-    refetchInterval: REFRESH_MS,
-    refetchOnWindowFocus: false,
-    staleTime: REFRESH_MS,
-  });
-}
-
-function useLiveReddit() {
-  return useQuery({
-    queryKey: ["hanta-reddit"],
-    queryFn: () => getLiveHantaReddit(),
     refetchInterval: REFRESH_MS,
     refetchOnWindowFocus: false,
     staleTime: REFRESH_MS,
@@ -758,54 +747,6 @@ function WorldMapSection({ items }: { items: LiveNewsItem[] }) {
   );
 }
 
-function PublicPulse({ redditQuery }: { redditQuery: ReturnType<typeof useLiveReddit> }) {
-  const reddit = redditQuery.data?.items ?? [];
-  const isError = redditQuery.isError;
-
-  return (
-    <div>
-      <SectionHead title="Public pulse" />
-      <div className="mb-2 flex items-center gap-2 text-xs">
-        <span className="border border-danger px-3 py-1 text-danger">Reddit</span>
-        {redditQuery.isFetching && <span className="text-muted-foreground">Updating…</span>}
-      </div>
-
-      <div className="space-y-2">
-        {!isError &&
-          reddit.slice(0, 8).map((p) => (
-            <a
-              key={p.id}
-              href={p.url}
-              target="_blank"
-              rel="noreferrer"
-              className="block border border-border bg-card p-3"
-            >
-              <div className="text-[13px] font-medium text-foreground">{p.title}</div>
-              <div className="mt-2 text-[11px] text-muted-foreground">
-                r/{p.subreddit} · {p.score} upvotes · {p.time}
-              </div>
-            </a>
-          ))}
-        {!isError && reddit.length === 0 && (
-          <div className="border border-border bg-card p-3 text-sm text-muted-foreground">
-            No Reddit items in the current refresh window.
-          </div>
-        )}
-        {isError && (
-          <a
-            href="https://www.reddit.com/search/?q=hantavirus&sort=new"
-            target="_blank"
-            rel="noreferrer"
-            className="block border border-danger/40 bg-danger/10 p-3 text-sm text-danger"
-          >
-            Reddit feed unavailable right now. Open Reddit search directly.
-          </a>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function ERProtocol() {
   return (
     <div>
@@ -853,7 +794,6 @@ function SectionHead({ title }: { title: string }) {
 
 function HantavirusMonitor() {
   const newsQuery = useLiveNews();
-  const redditQuery = useLiveReddit();
 
   const liveItems = newsQuery.data?.items ?? [];
   const items = liveItems.length ? liveItems : FALLBACK_NEWS;
@@ -876,8 +816,7 @@ function HantavirusMonitor() {
 
       <WorldMapSection items={items} />
 
-      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-2 md:grid-cols-2">
-        <PublicPulse redditQuery={redditQuery} />
+      <section className="mx-auto max-w-7xl px-4 py-2">
         <ERProtocol />
       </section>
       <FAQSection />
