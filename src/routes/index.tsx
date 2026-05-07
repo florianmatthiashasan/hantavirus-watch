@@ -127,6 +127,15 @@ type NewsItem = {
   url: string;
 };
 
+type LiveLocationRule = {
+  id: string;
+  location: string;
+  country: string;
+  lat: number;
+  lng: number;
+  keywords: string[];
+};
+
 const NEWS: NewsItem[] = [
   {
     time: "07 May 2026 · 14:22 UTC",
@@ -226,6 +235,112 @@ const FAQ = [
     a: "No. This dashboard is for informational use only and does not replace clinical judgment.",
   },
 ];
+
+const REFRESH_MS = 30 * 60 * 1000; // 30 minutes
+
+const LIVE_LOCATION_RULES: LiveLocationRule[] = [
+  {
+    id: "mv-hondius-live",
+    location: "MV Hondius / Cape Verde waters",
+    country: "Maritime / Multi-country",
+    lat: 16.0,
+    lng: -24.0,
+    keywords: ["hondius", "cape verde", "kap verde", "cabo verde", "cruise ship", "vessel"],
+  },
+  {
+    id: "argentina-live",
+    location: "Patagonia / Southern Argentina",
+    country: "Argentina",
+    lat: -41.1,
+    lng: -71.3,
+    keywords: ["argentina", "patagonia", "andes virus", "bariloche", "chubut", "neuquen"],
+  },
+  {
+    id: "canaries-live",
+    location: "Canary Islands",
+    country: "Spain",
+    lat: 28.1,
+    lng: -15.4,
+    keywords: ["canary islands", "canaries", "tenerife", "las palmas", "spain"],
+  },
+  {
+    id: "germany-live",
+    location: "Cologne / North Rhine-Westphalia",
+    country: "Germany",
+    lat: 50.93,
+    lng: 6.96,
+    keywords: ["germany", "deutschland", "nrw", "cologne", "köln", "rki"],
+  },
+  {
+    id: "usa-live",
+    location: "Four Corners region",
+    country: "USA",
+    lat: 36.99,
+    lng: -109.04,
+    keywords: ["usa", "united states", "four corners", "sin nombre", "new mexico", "arizona"],
+  },
+  {
+    id: "chile-live",
+    location: "Aysen / Los Lagos",
+    country: "Chile",
+    lat: -45.4,
+    lng: -72.7,
+    keywords: ["chile", "aysen", "los lagos"],
+  },
+];
+
+const SUSPECT_RE = /\b(suspect|suspected|possible|probable|under investigation|verdacht|mutmasslich)\b/i;
+const CASE_RE = /\b(case|cases|cluster|confirmed|infection|infektion|outbreak)\b/i;
+const DEATH_RE = /\b(death|deaths|dead|tote|gestorben)\b/i;
+
+function useLiveNews() {
+  return useQuery({
+    queryKey: ["hanta-news"],
+    queryFn: () => getLiveHantaNews(),
+    refetchInterval: REFRESH_MS,
+    refetchOnWindowFocus: false,
+    staleTime: REFRESH_MS,
+  });
+}
+
+function buildLiveSignalOutbreaks(liveItems: LiveNewsItem[]): Outbreak[] {
+  const offsets = new Map<string, number>();
+
+  return liveItems.flatMap((item, idx) => {
+    const text = `${item.headline} ${item.body}`.toLowerCase();
+    const rule = LIVE_LOCATION_RULES.find((r) => r.keywords.some((k) => text.includes(k)));
+    if (!rule) return [];
+
+    const localIndex = offsets.get(rule.id) ?? 0;
+    offsets.set(rule.id, localIndex + 1);
+
+    const angle = ((localIndex % 6) / 6) * Math.PI * 2;
+    const spread = localIndex === 0 ? 0 : 0.35;
+    const lat = rule.lat + Math.sin(angle) * spread;
+    const lng = rule.lng + Math.cos(angle) * spread;
+
+    const suspected = SUSPECT_RE.test(text);
+    const caseSignal = CASE_RE.test(text);
+    const deathSignal = DEATH_RE.test(text);
+    const status: Outbreak["status"] =
+      deathSignal || caseSignal || item.severity === "CRITICAL" ? "ACTIVE" : "MONITORING";
+
+    const signalType = suspected ? "suspected" : caseSignal ? "case" : "alert";
+    return [
+      {
+        id: `live-signal-${rule.id}-${item.iso}-${idx}`,
+        location: `${rule.location} · Live signal`,
+        country: rule.country,
+        lat,
+        lng,
+        cases: 1,
+        deaths: deathSignal ? 1 : 0,
+        status,
+        note: `Auto ${signalType} signal from ${item.source}: ${item.headline}`,
+      },
+    ];
+  });
+}
 
 // ---------------- Components ----------------
 
@@ -351,16 +466,21 @@ function SectionHead({ title, sub }: { title: string; sub?: string }) {
 }
 
 // Equirectangular projection map
-function WorldMap() {
+function WorldMap({ liveItems }: { liveItems: LiveNewsItem[] }) {
+  const mapOutbreaks = [...OUTBREAKS, ...buildLiveSignalOutbreaks(liveItems).slice(0, 12)];
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-6">
       <SectionHead title="OUTBREAK MAP" sub="Live · OpenStreetMap · click pins" />
       <div className="relative overflow-hidden border border-border bg-surface/40">
-        <OutbreakMap outbreaks={OUTBREAKS} />
+        <OutbreakMap outbreaks={mapOutbreaks} />
         <div className="flex flex-wrap items-center gap-4 border-t border-border bg-surface/60 px-3 py-2 text-[10px] text-muted-foreground">
           <LegendDot color="#f43f5e" label="ACTIVE OUTBREAK" />
           <LegendDot color="#f59e0b" label="MONITORING" />
           <LegendDot color="#10b981" label="ENDEMIC" />
+          <span className="rounded border border-border px-1.5 py-0.5 text-[9px]">
+            + LIVE SIGNALS (30m)
+          </span>
           <span className="ml-auto">Tiles © OpenStreetMap · CARTO</span>
         </div>
       </div>
@@ -377,8 +497,6 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
-const REFRESH_MS = 30 * 60 * 1000; // 30 minutes
-
 function useTimeAgo(iso?: string) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -392,15 +510,7 @@ function useTimeAgo(iso?: string) {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ago`;
 }
 
-function NewsFeed() {
-  const query = useQuery({
-    queryKey: ["hanta-news"],
-    queryFn: () => getLiveHantaNews(),
-    refetchInterval: REFRESH_MS,
-    refetchOnWindowFocus: false,
-    staleTime: REFRESH_MS,
-  });
-
+function NewsFeed({ query }: { query: ReturnType<typeof useLiveNews> }) {
   const live = query.data?.items ?? [];
   // Merge: live items first, then curated fallback for items not present
   const merged: (LiveNewsItem | (typeof NEWS)[number])[] =
@@ -572,13 +682,16 @@ function Footer() {
 }
 
 function EmergencyRoom() {
+  const liveQuery = useLiveNews();
+  const liveItems = liveQuery.data?.items ?? [];
+
   return (
     <div className="min-h-screen">
       <TopBar />
       <Hero />
       <Stats />
-      <WorldMap />
-      <NewsFeed />
+      <WorldMap liveItems={liveItems} />
+      <NewsFeed query={liveQuery} />
       <ClinicalPanel />
       <FaqSection />
       <Footer />
