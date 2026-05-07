@@ -362,21 +362,90 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
+const REFRESH_MS = 30 * 60 * 1000; // 30 minutes
+
+function useTimeAgo(iso?: string) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(i);
+  }, []);
+  if (!iso) return "—";
+  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ago`;
+}
+
 function NewsFeed() {
+  const query = useQuery({
+    queryKey: ["hanta-news"],
+    queryFn: () => getLiveHantaNews(),
+    refetchInterval: REFRESH_MS,
+    refetchOnWindowFocus: false,
+    staleTime: REFRESH_MS,
+  });
+
+  const live = query.data?.items ?? [];
+  // Merge: live items first, then curated fallback for items not present
+  const merged: (LiveNewsItem | (typeof NEWS)[number])[] =
+    live.length > 0 ? [...live, ...NEWS.slice(0, 4)] : NEWS;
+
+  const lastFetch = query.data?.fetchedAt;
+  const ago = useTimeAgo(lastFetch);
+  const nextRefresh = lastFetch
+    ? new Date(new Date(lastFetch).getTime() + REFRESH_MS).toISOString().slice(11, 16) + " UTC"
+    : "—";
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-6">
-      <SectionHead title="INCOMING TRANSMISSIONS" sub="Source: WHO · ECDC · CDC · RKI · press" />
+      <SectionHead
+        title="INCOMING TRANSMISSIONS"
+        sub={`Live · auto-refresh every 30m · WHO + CDC + Google News RSS`}
+      />
+      <div className="mb-3 flex flex-wrap items-center gap-3 border border-border bg-surface/60 px-3 py-2 text-[11px]">
+        <span className="flex items-center gap-2">
+          <span
+            className={`h-2 w-2 rounded-full ${
+              query.isFetching ? "bg-accent blink" : "bg-success"
+            }`}
+          />
+          {query.isFetching ? "FETCHING…" : "LIVE"}
+        </span>
+        <span className="text-muted-foreground">
+          Last update: <b className="text-foreground">{ago}</b>
+        </span>
+        <span className="text-muted-foreground">
+          Next: <b className="text-foreground">{nextRefresh}</b>
+        </span>
+        <span className="text-muted-foreground">
+          Live items: <b className="text-foreground">{live.length}</b>
+        </span>
+        <button
+          onClick={() => query.refetch()}
+          disabled={query.isFetching}
+          className="ml-auto border border-border px-2 py-1 text-[10px] tracking-widest hover:border-danger hover:text-danger disabled:opacity-50"
+        >
+          ↻ REFRESH NOW
+        </button>
+      </div>
+      {query.isError && (
+        <div className="mb-3 border border-danger/50 bg-danger/10 p-3 text-xs text-danger">
+          Live feed unavailable — showing curated fallback. ({String(query.error)})
+        </div>
+      )}
       <div className="grid gap-3 md:grid-cols-2">
-        {NEWS.map((n, i) => {
+        {merged.map((n, i) => {
           const sevCls =
             n.severity === "CRITICAL"
               ? "border-danger text-danger"
               : n.severity === "HIGH"
                 ? "border-accent text-accent"
                 : "border-border text-muted-foreground";
+          const isLive = "iso" in n;
           return (
             <a
-              key={i}
+              key={`${n.url}-${i}`}
               href={n.url}
               target="_blank"
               rel="noreferrer"
@@ -387,6 +456,11 @@ function NewsFeed() {
                   {n.severity}
                 </span>
                 <span className="text-muted-foreground">{n.source}</span>
+                {isLive && (
+                  <span className="border border-success/60 px-1 py-0.5 text-[9px] text-success">
+                    LIVE
+                  </span>
+                )}
                 <span className="ml-auto text-muted-foreground">{n.time}</span>
               </div>
               <h3 className="mt-2 font-bold leading-snug text-foreground group-hover:text-danger">
