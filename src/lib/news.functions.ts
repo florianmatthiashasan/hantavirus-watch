@@ -26,7 +26,7 @@ type FeedConfig = {
   sourceType: LiveNewsItem["sourceType"];
 };
 
-type SourceHealth = {
+export type SourceHealth = {
   source: string;
   status: "ok" | "error";
   lastCheckedAt: string;

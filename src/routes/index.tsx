@@ -1,47 +1,30 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { AlertTriangle, MapPin, Plane, Ship } from "lucide-react";
 import { OutbreakMap } from "@/components/OutbreakMap";
-import {
-  getLiveHantaNews,
-  type CaseStatus,
-  type LiveNewsItem,
-  type SourceType,
-} from "@/lib/news.functions";
+import { getLiveHantaNews, type LiveNewsItem } from "@/lib/news.functions";
 import { getLiveHantaReddit } from "@/lib/reddit.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "HANTAVIRUS // Global Emergency Room — Live Outbreak Tracker" },
+      { title: "Hantavirus Monitor — Outbreak Surveillance Dashboard" },
       {
         name: "description",
         content:
-          "Live emergency-room style dashboard tracking the 2026 hantavirus outbreak: confirmed cases, deaths, news feed and outbreak map.",
+          "Real-time hantavirus surveillance dashboard with alerts, map signals, public pulse and ER protocol.",
       },
-      { property: "og:title", content: "HANTAVIRUS // Global Emergency Room" },
+      { property: "og:title", content: "Hantavirus Monitor" },
       {
         property: "og:description",
         content:
-          "Live tracker of the 2026 hantavirus outbreak — cases, deaths, news, and map.",
+          "Real-time outbreak surveillance with alert feed, transmissions, map markers and protocol guidance.",
       },
     ],
   }),
-  component: EmergencyRoom,
+  component: HantavirusMonitor,
 });
-
-// ---------------- DATA (compiled from WHO / ECDC / CDC / RKI / news, May 2026) ----------------
-
-const STATS = {
-  confirmedCases: 2,
-  suspectedCases: 5,
-  deaths: 3,
-  critical: 1,
-  onBoard: 147,
-  argentinaCases2026: 41,
-  countriesAffected: 6,
-  riskLevelEU: "VERY LOW",
-};
 
 type Outbreak = {
   id: string;
@@ -53,6 +36,15 @@ type Outbreak = {
   deaths: number;
   status: "ACTIVE" | "MONITORING" | "ENDEMIC";
   note: string;
+};
+
+type LocationRule = {
+  id: string;
+  location: string;
+  country: string;
+  lat: number;
+  lng: number;
+  keywords: string[];
 };
 
 const OUTBREAKS: Outbreak[] = [
@@ -76,18 +68,18 @@ const OUTBREAKS: Outbreak[] = [
     cases: 41,
     deaths: 0,
     status: "ACTIVE",
-    note: "Andes virus — 2026 above epidemic threshold per Argentine MoH.",
+    note: "Andes virus activity above seasonal baseline.",
   },
   {
-    id: "spain-canaries",
-    location: "Canary Islands (port of entry)",
+    id: "canaries",
+    location: "Canary Islands",
     country: "Spain",
     lat: 28.1,
     lng: -15.4,
     cases: 0,
     deaths: 0,
     status: "MONITORING",
-    note: "Critical evacuations from Cape Verde. Vessel docking authorised.",
+    note: "Port-of-entry monitoring and travel-linked observation.",
   },
   {
     id: "germany-nrw",
@@ -98,7 +90,7 @@ const OUTBREAKS: Outbreak[] = [
     cases: 0,
     deaths: 1,
     status: "MONITORING",
-    note: "German passenger died. RKI lists local risk areas (Puumala virus).",
+    note: "Regional risk-area advisories in effect.",
   },
   {
     id: "usa-fourcorners",
@@ -109,216 +101,32 @@ const OUTBREAKS: Outbreak[] = [
     cases: 0,
     deaths: 0,
     status: "ENDEMIC",
-    note: "Sin Nombre virus endemic. CDC: NO person-to-person transmission.",
+    note: "Endemic zone. Ongoing baseline surveillance.",
   },
   {
     id: "chile",
-    location: "Aysén / Los Lagos",
+    location: "Aysen / Los Lagos",
     country: "Chile",
     lat: -45.4,
     lng: -72.7,
     cases: 0,
     deaths: 0,
     status: "ENDEMIC",
-    note: "Andes virus endemic — historically the only hantavirus with H2H risk.",
+    note: "Known endemic area with continuous public health monitoring.",
   },
 ];
 
-type NewsItem = {
-  id: string;
-  iso?: string;
-  time: string;
-  source: string;
-  sourceType: SourceType;
-  severity: "CRITICAL" | "HIGH" | "INFO";
-  headline: string;
-  body: string;
-  url: string;
-  caseStatus: CaseStatus;
-  confidenceScore: number;
-  confidenceLabel: "HIGH" | "MEDIUM" | "LOW";
-  signalReason: string;
-  lastVerifiedAt: string;
-};
-
-type LiveLocationRule = {
-  id: string;
-  location: string;
-  country: string;
-  lat: number;
-  lng: number;
-  keywords: string[];
-};
-
-const NEWS: NewsItem[] = [
+const LIVE_LOCATION_RULES: LocationRule[] = [
   {
-    id: "fallback-rki-2026-05-07",
-    iso: "2026-05-07T14:22:00.000Z",
-    time: "07 May 2026 · 14:22 UTC",
-    source: "RKI",
-    sourceType: "OFFICIAL",
-    severity: "HIGH",
-    headline: "RKI updates guidance on cruise-ship hantavirus outbreak",
-    body: "Robert Koch-Institut confirms outbreak on Dutch-flagged vessel that left southern Argentina on 1 April. Andes virus suspected.",
-    url: "https://www.rki.de/DE/Themen/Infektionskrankheiten/Infektionskrankheiten-A-Z/H/Hantavirus/Hanta_Kreuzfahrtschiff_2026.html",
-    caseStatus: "PROBABLE",
-    confidenceScore: 90,
-    confidenceLabel: "HIGH",
-    signalReason: "curated=official bulletin",
-    lastVerifiedAt: "2026-05-07T14:22:00.000Z",
-  },
-  {
-    id: "fallback-ecdc-2026-05-06",
-    iso: "2026-05-06T18:40:00.000Z",
-    time: "06 May 2026 · 18:40 UTC",
-    source: "ECDC",
-    sourceType: "OFFICIAL",
-    severity: "HIGH",
-    headline: "ECDC: 7 cases in cruise-ship cluster — risk to EU public 'very low'",
-    body: "Rapid risk assessment published. Two lab-confirmed, five probable. Investigation into possible human-to-human transmission ongoing.",
-    url: "https://www.ecdc.europa.eu/en/publications-data/hantavirus-associated-cluster-illness-cruise-ship-ecdc-assessment-and",
-    caseStatus: "CONFIRMED",
-    confidenceScore: 96,
-    confidenceLabel: "HIGH",
-    signalReason: "curated=official risk assessment",
-    lastVerifiedAt: "2026-05-06T18:40:00.000Z",
-  },
-  {
-    id: "fallback-who-2026-05-05",
-    iso: "2026-05-05T23:10:00.000Z",
-    time: "05 May 2026 · 23:10 UTC",
-    source: "WHO",
-    sourceType: "OFFICIAL",
-    severity: "CRITICAL",
-    headline: "WHO DON599 — Hantavirus cluster linked to cruise-ship travel, multi-country",
-    body: "147 passengers and crew. 7 cases reported including 3 deaths, 1 critical, 3 mild. Outbreak under multi-country coordination.",
-    url: "https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON599",
-    caseStatus: "CONFIRMED",
-    confidenceScore: 96,
-    confidenceLabel: "HIGH",
-    signalReason: "curated=WHO DON",
-    lastVerifiedAt: "2026-05-05T23:10:00.000Z",
-  },
-  {
-    id: "fallback-zeit-2026-05-05",
-    iso: "2026-05-05T16:05:00.000Z",
-    time: "05 May 2026 · 16:05 UTC",
-    source: "DIE ZEIT",
-    sourceType: "MEDIA",
-    severity: "HIGH",
-    headline: "Bis zu sieben mögliche Hantavirus-Fälle auf Kreuzfahrtschiff",
-    body: "Zwei labor­bestätigte und fünf mutmaßliche Fälle, drei Tote. Schiff sitzt vor Kap Verde fest.",
-    url: "https://www.zeit.de/gesellschaft/zeitgeschehen/2026-05/hantavirus-kreuzfahrtschiff-infektion-tote-kap-verde",
-    caseStatus: "SUSPECTED",
-    confidenceScore: 56,
-    confidenceLabel: "MEDIUM",
-    signalReason: "curated=media report",
-    lastVerifiedAt: "2026-05-05T16:05:00.000Z",
-  },
-  {
-    id: "fallback-tonline-2026-05-05",
-    iso: "2026-05-05T09:30:00.000Z",
-    time: "05 May 2026 · 09:30 UTC",
-    source: "t-online",
-    sourceType: "MEDIA",
-    severity: "INFO",
-    headline: "Hantavirus: Risikogebiete in Köln und NRW ausgewiesen",
-    body: "Erste Fälle 2026 in Nordrhein-Westfalen gemeldet. Behörden weisen auf Puumala-Risikogebiete hin.",
-    url: "https://koeln.t-online.de/region/koeln/id_101241444/hantavirus-risikogebiete-in-koeln-und-nrw-ausgewiesen-erste-faelle.html",
-    caseStatus: "ADVISORY",
-    confidenceScore: 50,
-    confidenceLabel: "MEDIUM",
-    signalReason: "curated=regional advisory",
-    lastVerifiedAt: "2026-05-05T09:30:00.000Z",
-  },
-  {
-    id: "fallback-argmoh-2026-05-04",
-    iso: "2026-05-04T21:00:00.000Z",
-    time: "04 May 2026 · 21:00 UTC",
-    source: "Argentina MoH",
-    sourceType: "OFFICIAL",
-    severity: "HIGH",
-    headline: "Argentina: 41 cases in 2026 — 'above epidemic threshold'",
-    body: "Health ministry reports stronger spread than previous seasons. Andes virus circulation increasing.",
-    url: "https://www.unionesarda.it/de/welt/hantavirus-argentinien-stellt-klar-im-jahr-2026-wurden-bereits-41-infektionsfalle-registriert-vs2nlovi",
-    caseStatus: "PROBABLE",
-    confidenceScore: 88,
-    confidenceLabel: "HIGH",
-    signalReason: "curated=official statement",
-    lastVerifiedAt: "2026-05-04T21:00:00.000Z",
-  },
-  {
-    id: "fallback-cdc-2026-04-23",
-    iso: "2026-04-23T12:00:00.000Z",
-    time: "23 Apr 2026 · 12:00 UTC",
-    source: "CDC",
-    sourceType: "OFFICIAL",
-    severity: "INFO",
-    headline: "CDC: Sin Nombre virus does NOT spread person-to-person",
-    body: "Surveillance continues across Four Corners. Public reminder: rodent exposure remains the primary transmission route in the US.",
-    url: "https://www.cdc.gov/hantavirus/data-research/cases/index.html",
-    caseStatus: "ADVISORY",
-    confidenceScore: 78,
-    confidenceLabel: "HIGH",
-    signalReason: "curated=official guidance",
-    lastVerifiedAt: "2026-04-23T12:00:00.000Z",
-  },
-];
-
-const SYMPTOMS = [
-  {
-    phase: "EARLY (1–5 d)",
-    items: ["Fever", "Severe muscle aches", "Fatigue", "Headache", "Chills"],
-  },
-  {
-    phase: "LATE (4–10 d)",
-    items: [
-      "Coughing",
-      "Acute shortness of breath",
-      "Pulmonary edema",
-      "Hypotension",
-      "Cardiac failure (HCPS)",
-    ],
-  },
-];
-
-const PROTOCOL = [
-  "ISOLATE patient — droplet + contact precautions until Andes virus excluded.",
-  "OXYGEN sat target ≥ 92%. Prepare for mechanical ventilation / ECMO.",
-  "FLUIDS conservatively — risk of pulmonary edema in HCPS.",
-  "COLLECT serum + EDTA blood for RT-PCR & ELISA (IgM/IgG).",
-  "NOTIFY public health authority within 24h. WHO IHR if travel-linked.",
-  "TRACE contacts — focus on shared enclosed spaces (cabins, vehicles).",
-];
-
-const FAQ = [
-  {
-    q: "Is everything updated automatically?",
-    a: "Yes. The dashboard updates automatically, and the live news feed refreshes every 30 minutes.",
-  },
-  {
-    q: "Why are some reports not labeled as outbreaks?",
-    a: "Some items are suspected cases, advisories, or monitoring updates rather than confirmed outbreaks.",
-  },
-  {
-    q: "Is this medical advice?",
-    a: "No. This dashboard is for informational use only and does not replace clinical judgment.",
-  },
-];
-
-const REFRESH_MS = 30 * 60 * 1000; // 30 minutes
-
-const LIVE_LOCATION_RULES: LiveLocationRule[] = [
-  {
-    id: "mv-hondius-live",
-    location: "MV Hondius / Cape Verde waters",
+    id: "cape-verde",
+    location: "MV Hondius — off Cape Verde",
     country: "Maritime / Multi-country",
     lat: 16.0,
     lng: -24.0,
-    keywords: ["hondius", "cape verde", "kap verde", "cabo verde", "cruise ship", "vessel"],
+    keywords: ["hondius", "cape verde", "kap verde", "cruise", "vessel", "ship"],
   },
   {
-    id: "argentina-live",
+    id: "argentina",
     location: "Patagonia / Southern Argentina",
     country: "Argentina",
     lat: -41.1,
@@ -326,23 +134,23 @@ const LIVE_LOCATION_RULES: LiveLocationRule[] = [
     keywords: ["argentina", "patagonia", "andes virus", "bariloche", "chubut", "neuquen"],
   },
   {
-    id: "canaries-live",
+    id: "canaries",
     location: "Canary Islands",
     country: "Spain",
     lat: 28.1,
     lng: -15.4,
-    keywords: ["canary islands", "canaries", "tenerife", "las palmas", "spain"],
+    keywords: ["canary", "canaries", "tenerife", "las palmas", "spain"],
   },
   {
-    id: "germany-live",
+    id: "germany-nrw",
     location: "Cologne / North Rhine-Westphalia",
     country: "Germany",
     lat: 50.93,
     lng: 6.96,
-    keywords: ["germany", "deutschland", "nrw", "cologne", "köln", "rki"],
+    keywords: ["germany", "deutschland", "nrw", "cologne", "koln", "köln"],
   },
   {
-    id: "usa-live",
+    id: "usa-fourcorners",
     location: "Four Corners region",
     country: "USA",
     lat: 36.99,
@@ -350,7 +158,7 @@ const LIVE_LOCATION_RULES: LiveLocationRule[] = [
     keywords: ["usa", "united states", "four corners", "sin nombre", "new mexico", "arizona"],
   },
   {
-    id: "chile-live",
+    id: "chile",
     location: "Aysen / Los Lagos",
     country: "Chile",
     lat: -45.4,
@@ -359,23 +167,109 @@ const LIVE_LOCATION_RULES: LiveLocationRule[] = [
   },
 ];
 
-const SUSPECT_RE = /\b(suspect|suspected|possible|probable|under investigation|verdacht|mutmasslich)\b/i;
-const CASE_RE = /\b(case|cases|cluster|confirmed|infection|infektion|outbreak)\b/i;
-const DEATH_RE = /\b(death|deaths|dead|tote|gestorben)\b/i;
-const SOURCE_FILTERS = ["ALL", "OFFICIAL", "MEDIA", "AGGREGATOR"] as const;
-const CASE_FILTERS = ["ALL", "CONFIRMED", "PROBABLE", "SUSPECTED", "ADVISORY"] as const;
+const FALLBACK_NEWS: LiveNewsItem[] = [
+  {
+    time: "07 May 2026 · 14:22 UTC",
+    iso: "2026-05-07T14:22:00.000Z",
+    source: "RKI",
+    sourceType: "OFFICIAL",
+    severity: "HIGH",
+    headline: "RKI updates guidance on cruise-ship hantavirus outbreak",
+    body: "Andes virus remains under investigation in a travel-linked cluster.",
+    url: "https://www.rki.de/DE/Themen/Infektionskrankheiten/Infektionskrankheiten-A-Z/H/Hantavirus/Hanta_Kreuzfahrtschiff_2026.html",
+    caseStatus: "PROBABLE",
+    confidenceScore: 90,
+    confidenceLabel: "HIGH",
+    signalReason: "official update",
+    lastVerifiedAt: "2026-05-07T14:22:00.000Z",
+  },
+  {
+    time: "06 May 2026 · 18:40 UTC",
+    iso: "2026-05-06T18:40:00.000Z",
+    source: "ECDC",
+    sourceType: "OFFICIAL",
+    severity: "HIGH",
+    headline: "ECDC publishes risk assessment for multi-country cluster",
+    body: "Two confirmed and several probable cases in outbreak-linked travel group.",
+    url: "https://www.ecdc.europa.eu/en/publications-data/hantavirus-associated-cluster-illness-cruise-ship-ecdc-assessment-and",
+    caseStatus: "CONFIRMED",
+    confidenceScore: 96,
+    confidenceLabel: "HIGH",
+    signalReason: "official risk bulletin",
+    lastVerifiedAt: "2026-05-06T18:40:00.000Z",
+  },
+  {
+    time: "05 May 2026 · 23:10 UTC",
+    iso: "2026-05-05T23:10:00.000Z",
+    source: "WHO",
+    sourceType: "OFFICIAL",
+    severity: "CRITICAL",
+    headline: "WHO DON599 reports hantavirus cluster linked to cruise travel",
+    body: "Multi-country coordination active with deaths and critical cases reported.",
+    url: "https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON599",
+    caseStatus: "CONFIRMED",
+    confidenceScore: 96,
+    confidenceLabel: "HIGH",
+    signalReason: "official outbreak notification",
+    lastVerifiedAt: "2026-05-05T23:10:00.000Z",
+  },
+];
 
-type SourceFilter = (typeof SOURCE_FILTERS)[number];
-type CaseFilter = (typeof CASE_FILTERS)[number];
-type DisplayNewsItem = LiveNewsItem & { id: string; isLive: boolean };
+const SYMPTOM_PHASES = [
+  {
+    phase: "Early phase",
+    tone: "amber",
+    items: ["Fever", "Severe muscle aches", "Fatigue", "Headache", "Chills", "Nausea"],
+  },
+  {
+    phase: "Late phase",
+    tone: "red",
+    items: [
+      "Coughing",
+      "Shortness of breath",
+      "Pulmonary edema",
+      "Hypotension",
+      "Respiratory failure",
+      "Shock",
+    ],
+  },
+] as const;
 
-function confidenceCls(label: "HIGH" | "MEDIUM" | "LOW") {
-  return label === "HIGH"
-    ? "border-success/60 text-success"
-    : label === "MEDIUM"
-      ? "border-accent/60 text-accent"
-      : "border-danger/60 text-danger";
-}
+const ER_PROTOCOL = [
+  "Isolate patient and apply droplet/contact precautions.",
+  "Stabilize oxygenation and monitor respiratory decline.",
+  "Collect serum and EDTA blood for RT-PCR and serology.",
+  "Notify local public health authority within 24 hours.",
+  "Start contact tracing for enclosed-space exposures.",
+];
+
+const FAQ_ITEMS = [
+  {
+    q: "How often is the dashboard updated?",
+    a: "It refreshes automatically every 30 minutes, and you can trigger a manual refresh anytime.",
+  },
+  {
+    q: "Where do the sources come from?",
+    a: "From official agencies (for example WHO and CDC), news feeds, and public Reddit signals.",
+  },
+  {
+    q: "Are social signals verified?",
+    a: "No. Social signals are early indicators and should always be cross-checked against official sources.",
+  },
+  {
+    q: "Is this medical advice?",
+    a: "No. This is a monitoring dashboard and does not replace clinical judgment.",
+  },
+];
+
+const RISK_POSTURE = {
+  publicFearLevel: "Low panic risk — stay alert",
+  who: "WHO: Elevated monitoring for travel-linked clusters.",
+  eu: "EU / ECDC: Current public risk remains very low for the general population.",
+  cdc: "CDC: Rodent exposure remains primary risk; no broad sustained person-to-person spread.",
+};
+
+const REFRESH_MS = 30 * 60 * 1000;
 
 function useLiveNews() {
   return useQuery({
@@ -397,54 +291,6 @@ function useLiveReddit() {
   });
 }
 
-function buildLiveSignalOutbreaks(liveItems: LiveNewsItem[]): Outbreak[] {
-  const offsets = new Map<string, number>();
-
-  return liveItems.flatMap((item, idx) => {
-    const text = `${item.headline} ${item.body}`.toLowerCase();
-    const rule = LIVE_LOCATION_RULES.find((r) => r.keywords.some((k) => text.includes(k)));
-    if (!rule) return [];
-
-    const localIndex = offsets.get(rule.id) ?? 0;
-    offsets.set(rule.id, localIndex + 1);
-
-    const angle = ((localIndex % 6) / 6) * Math.PI * 2;
-    const spread = localIndex === 0 ? 0 : 0.35;
-    const lat = rule.lat + Math.sin(angle) * spread;
-    const lng = rule.lng + Math.cos(angle) * spread;
-
-    const suspected = item.caseStatus === "SUSPECTED" || SUSPECT_RE.test(text);
-    const caseSignal =
-      item.caseStatus === "CONFIRMED" ||
-      item.caseStatus === "PROBABLE" ||
-      CASE_RE.test(text);
-    const deathSignal = DEATH_RE.test(text);
-    const status: Outbreak["status"] =
-      deathSignal || caseSignal || item.severity === "CRITICAL"
-        ? "ACTIVE"
-        : item.caseStatus === "ADVISORY"
-          ? "ENDEMIC"
-          : "MONITORING";
-
-    const signalType = suspected ? "suspected" : caseSignal ? "case" : "alert";
-    return [
-      {
-        id: `live-signal-${rule.id}-${item.iso}-${idx}`,
-        location: `${rule.location} · Live signal`,
-        country: rule.country,
-        lat,
-        lng,
-        cases: 1,
-        deaths: deathSignal ? 1 : 0,
-        status,
-        note: `Auto ${signalType} signal from ${item.source}: ${item.headline}`,
-      },
-    ];
-  });
-}
-
-// ---------------- Components ----------------
-
 function useClock() {
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
@@ -455,147 +301,27 @@ function useClock() {
   return now;
 }
 
-function TopBar() {
-  const now = useClock();
-  return (
-    <header className="sticky top-0 z-30 border-b border-border bg-surface/85 backdrop-blur">
-      <div className="flex flex-wrap items-center gap-3 px-4 py-2 text-xs">
-        <span className="alert-pulse flex items-center gap-2 bg-danger px-2 py-1 font-bold tracking-widest text-primary-foreground">
-          <span className="blink h-2 w-2 rounded-full bg-primary-foreground" />
-          LIVE · DEFCON 3
-        </span>
-        <span className="text-muted-foreground">
-          EMERGENCY ROOM // GLOBAL HANTAVIRUS SURVEILLANCE
-        </span>
-        <span className="ml-auto text-muted-foreground">
-          UTC {now ? now.toISOString().slice(11, 19) : "--:--:--"}
-        </span>
-        <span className="rounded border border-border px-2 py-0.5 text-muted-foreground">
-          SRC: WHO · CDC · Google News · Reddit
-        </span>
-      </div>
-    </header>
-  );
-}
+function useThemeMode() {
+  const [mode, setMode] = useState<"light" | "dark">("light");
 
-function Hero() {
-  return (
-    <section className="scanline relative border-b border-border bg-gradient-to-b from-danger/15 to-transparent px-4 py-10">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-3 inline-flex items-center gap-2 border border-danger/60 bg-danger/10 px-3 py-1 text-[10px] font-bold tracking-[0.3em] text-danger">
-          <span className="blink">●</span> ACTIVE OUTBREAK · WHO DON599 · 2026
-        </div>
-        <h1 className="font-mono text-4xl font-black tracking-tight md:text-6xl">
-          HANTAVIRUS<span className="text-danger">_</span>
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">
-          Emergency-room dashboard tracking the cruise-ship hantavirus cluster
-          (MV Hondius), the Argentine Andes-virus surge, and global endemic
-          activity. All figures verified against WHO, ECDC, CDC and RKI.
-        </p>
-      </div>
-    </section>
-  );
-}
+  useEffect(() => {
+    const saved = localStorage.getItem("hanta-theme");
+    const preferred = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    const initial = saved === "dark" || saved === "light" ? saved : preferred;
+    setMode(initial);
+    document.documentElement.classList.toggle("dark", initial === "dark");
+  }, []);
 
-function StatCard({
-  label,
-  value,
-  sub,
-  tone = "default",
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-  tone?: "default" | "danger" | "warning" | "success";
-}) {
-  const toneCls =
-    tone === "danger"
-      ? "text-danger border-danger/50"
-      : tone === "warning"
-        ? "text-accent border-accent/50"
-        : tone === "success"
-          ? "text-success border-success/50"
-          : "text-foreground border-border";
-  return (
-    <div className={`relative border bg-surface/60 p-4 ${toneCls}`}>
-      <div className="text-[10px] font-bold tracking-[0.2em] text-muted-foreground">
-        {label}
-      </div>
-      <div className="mt-2 font-mono text-4xl font-black leading-none">
-        {value}
-      </div>
-      {sub && <div className="mt-2 text-[11px] text-muted-foreground">{sub}</div>}
-      <div className="absolute right-2 top-2 text-[10px] text-muted-foreground">
-        ◉ LIVE
-      </div>
-    </div>
-  );
-}
+  const toggle = () => {
+    setMode((prev) => {
+      const next = prev === "light" ? "dark" : "light";
+      document.documentElement.classList.toggle("dark", next === "dark");
+      localStorage.setItem("hanta-theme", next);
+      return next;
+    });
+  };
 
-function Stats() {
-  return (
-    <section className="mx-auto max-w-7xl px-4 py-6">
-      <SectionHead title="VITALS" sub="MV Hondius cluster + global signal" />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="DEATHS" value={STATS.deaths} sub="Cruise-ship cluster" tone="danger" />
-        <StatCard label="LAB-CONFIRMED" value={STATS.confirmedCases} sub="RT-PCR positive" tone="warning" />
-        <StatCard label="SUSPECTED" value={STATS.suspectedCases} sub="Probable cases" tone="warning" />
-        <StatCard label="CRITICAL ICU" value={STATS.critical} tone="danger" />
-        <StatCard label="ON BOARD" value={STATS.onBoard} sub="Passengers + crew" />
-        <StatCard label="ARGENTINA 2026" value={STATS.argentinaCases2026} sub="Above epidemic threshold" tone="warning" />
-        <StatCard label="COUNTRIES INVOLVED" value={STATS.countriesAffected} />
-        <StatCard label="EU PUBLIC RISK" value={STATS.riskLevelEU} sub="ECDC assessment" tone="success" />
-      </div>
-    </section>
-  );
-}
-
-function SectionHead({ title, sub }: { title: string; sub?: string }) {
-  return (
-    <div className="mb-3 flex items-end justify-between border-b border-border pb-2">
-      <h2 className="text-xs font-bold tracking-[0.3em] text-foreground">
-        ▸ {title}
-      </h2>
-      {sub && (
-        <span className="text-[10px] tracking-wider text-muted-foreground">
-          {sub}
-        </span>
-      )}
-    </div>
-  );
-}
-
-// Equirectangular projection map
-function WorldMap({ liveItems }: { liveItems: LiveNewsItem[] }) {
-  const mapOutbreaks = [...OUTBREAKS, ...buildLiveSignalOutbreaks(liveItems).slice(0, 12)];
-
-  return (
-    <section className="mx-auto max-w-7xl px-4 py-6">
-      <SectionHead title="OUTBREAK MAP" sub="Live · OpenStreetMap · click pins" />
-      <div className="relative overflow-hidden border border-border bg-surface/40">
-        <OutbreakMap outbreaks={mapOutbreaks} />
-        <div className="flex flex-wrap items-center gap-4 border-t border-border bg-surface/60 px-3 py-2 text-[10px] text-muted-foreground">
-          <LegendDot color="#f43f5e" label="ACTIVE OUTBREAK" />
-          <LegendDot color="#f59e0b" label="MONITORING" />
-          <LegendDot color="#10b981" label="ENDEMIC" />
-          <span className="rounded border border-border px-1.5 py-0.5 text-[9px]">
-            + LIVE SIGNALS (30m)
-          </span>
-          <span className="ml-auto">Tiles © OpenStreetMap · CARTO</span>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function LegendDot({ color, label }: { color: string; label: string }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: color }} />
-      {label}
-    </span>
-  );
+  return { mode, toggle };
 }
 
 function useTimeAgo(iso?: string) {
@@ -604,6 +330,7 @@ function useTimeAgo(iso?: string) {
     const i = setInterval(() => setTick((t) => t + 1), 30_000);
     return () => clearInterval(i);
   }, []);
+
   if (!iso) return "—";
   const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
   if (s < 60) return `${s}s ago`;
@@ -611,363 +338,508 @@ function useTimeAgo(iso?: string) {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ago`;
 }
 
-function NewsFeed({ query }: { query: ReturnType<typeof useLiveNews> }) {
-  const live = query.data?.items ?? [];
-  const sourceHealth = query.data?.sourceHealth ?? [];
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("ALL");
-  const [caseFilter, setCaseFilter] = useState<CaseFilter>("ALL");
-  const [newSinceLast, setNewSinceLast] = useState(0);
-  const previousLiveIds = useRef<Set<string>>(new Set());
+function levelFromNews(items: LiveNewsItem[]) {
+  if (items.some((x) => x.severity === "CRITICAL" || x.caseStatus === "CONFIRMED")) {
+    return "elevated" as const;
+  }
+  return "normal" as const;
+}
 
-  const liveDisplay = useMemo<DisplayNewsItem[]>(
-    () =>
-      live.map((n, i) => ({
-        ...n,
-        id: `live-${n.url || n.iso}-${i}`,
-        isLive: true,
-      })),
-    [live],
+function metricDelta(value: number) {
+  if (value > 0) return "↑ up";
+  if (value < 0) return "↓ down";
+  return "— steady";
+}
+
+function statusClass(status: Outbreak["status"]) {
+  if (status === "ACTIVE") return "border-danger/60 text-danger";
+  if (status === "MONITORING") return "border-accent/60 text-accent";
+  return "border-sky-600/50 text-sky-700 dark:text-sky-300";
+}
+
+function alertCardBorder(severity: LiveNewsItem["severity"]) {
+  if (severity === "CRITICAL") return "border-l-danger";
+  if (severity === "HIGH") return "border-l-accent";
+  return "border-l-sky-500";
+}
+
+function severityPill(severity: LiveNewsItem["severity"]) {
+  if (severity === "CRITICAL") return "bg-danger/15 text-danger border-danger/60";
+  if (severity === "HIGH") return "bg-accent/15 text-accent border-accent/60";
+  return "bg-sky-500/10 text-sky-700 border-sky-500/50 dark:text-sky-300";
+}
+
+function transmissionIcon(o: Outbreak) {
+  if (o.location.toLowerCase().includes("mv") || o.note.toLowerCase().includes("ship")) {
+    return Ship;
+  }
+  if (o.note.toLowerCase().includes("travel") || o.location.toLowerCase().includes("islands")) {
+    return Plane;
+  }
+  return MapPin;
+}
+
+function isDeathSignal(item: LiveNewsItem) {
+  return /death|deaths|dead|fatal|tote|gestorben/i.test(`${item.headline} ${item.body}`);
+}
+
+function isUnderObservationSignal(item: LiveNewsItem) {
+  return (
+    item.severity === "HIGH" ||
+    item.caseStatus === "PROBABLE" ||
+    item.caseStatus === "SUSPECTED" ||
+    /monitor|observation|investigation|watch/i.test(`${item.headline} ${item.body}`)
   );
+}
 
-  const fallbackDisplay = useMemo<DisplayNewsItem[]>(
-    () =>
-      NEWS.map((n) => ({
-        ...n,
-        iso: n.iso ?? n.lastVerifiedAt,
-        id: n.id,
-        isLive: false,
-      })),
-    [],
-  );
+function mapRuleForItem(item: LiveNewsItem) {
+  const text = `${item.headline} ${item.body}`.toLowerCase();
+  return LIVE_LOCATION_RULES.find((rule) => rule.keywords.some((k) => text.includes(k)));
+}
 
-  const merged = useMemo(() => {
-    const base = liveDisplay.length > 0 ? [...liveDisplay, ...fallbackDisplay] : fallbackDisplay;
-    const seen = new Set<string>();
-    return base.filter((item) => {
-      const key = `${item.url}|${item.headline.toLowerCase().replace(/\s+/g, " ")}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [liveDisplay, fallbackDisplay]);
-
-  const filtered = useMemo(
-    () =>
-      merged.filter((item) => {
-        const sourceOk = sourceFilter === "ALL" || item.sourceType === sourceFilter;
-        const caseOk = caseFilter === "ALL" || item.caseStatus === caseFilter;
-        return sourceOk && caseOk;
-      }),
-    [merged, sourceFilter, caseFilter],
-  );
-
-  useEffect(() => {
-    if (liveDisplay.length === 0) {
-      setNewSinceLast(0);
-      return;
+function buildLiveMapSignals(items: LiveNewsItem[]): Outbreak[] {
+  const bucket = new Map<
+    string,
+    {
+      rule: LocationRule;
+      cases: number;
+      deaths: number;
+      critical: number;
+      observation: number;
     }
+  >();
 
-    const current = new Set(liveDisplay.map((x) => x.url || x.id));
-    const prev = previousLiveIds.current;
-    if (prev.size === 0) {
-      previousLiveIds.current = current;
-      setNewSinceLast(0);
-      return;
-    }
+  for (const item of items) {
+    const rule = mapRuleForItem(item);
+    if (!rule) continue;
+    const current = bucket.get(rule.id) ?? {
+      rule,
+      cases: 0,
+      deaths: 0,
+      critical: 0,
+      observation: 0,
+    };
 
-    let delta = 0;
-    current.forEach((id) => {
-      if (!prev.has(id)) delta += 1;
-    });
-    setNewSinceLast(delta);
-    previousLiveIds.current = current;
-  }, [liveDisplay]);
+    current.cases += 1;
+    if (isDeathSignal(item)) current.deaths += 1;
+    if (item.severity === "CRITICAL" || item.caseStatus === "CONFIRMED") current.critical += 1;
+    if (isUnderObservationSignal(item)) current.observation += 1;
+    bucket.set(rule.id, current);
+  }
 
-  const lastFetch = query.data?.fetchedAt;
-  const ago = useTimeAgo(lastFetch);
-  const nextRefresh = lastFetch
-    ? new Date(new Date(lastFetch).getTime() + REFRESH_MS).toISOString().slice(11, 16) + " UTC"
-    : "—";
+  return Array.from(bucket.values()).map((x) => {
+    const status: Outbreak["status"] =
+      x.deaths > 0 || x.critical > 0 ? "ACTIVE" : x.observation > 0 ? "MONITORING" : "ENDEMIC";
+
+    return {
+      id: `live-${x.rule.id}`,
+      location: `${x.rule.location} · live signal`,
+      country: x.rule.country,
+      lat: x.rule.lat,
+      lng: x.rule.lng,
+      cases: x.cases,
+      deaths: x.deaths,
+      status,
+      note: `Deaths ${x.deaths} · Critical ${x.critical} · Under observation ${x.observation}`,
+    };
+  });
+}
+
+function Topbar({ alertLevel, refreshedAt }: { alertLevel: "normal" | "elevated"; refreshedAt?: string }) {
+  const now = useClock();
+  const { mode, toggle } = useThemeMode();
+  const ago = useTimeAgo(refreshedAt);
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-6">
-      <SectionHead
-        title="INCOMING TRANSMISSIONS"
-        sub={`Live · auto-refresh every 30m · WHO + CDC + Google News RSS`}
-      />
-      <div className="mb-3 flex flex-wrap items-center gap-3 border border-border bg-surface/60 px-3 py-2 text-[11px]">
-        <span className="flex items-center gap-2">
-          <span
-            className={`h-2 w-2 rounded-full ${
-              query.isFetching ? "bg-accent blink" : "bg-success"
-            }`}
-          />
-          {query.isFetching ? "FETCHING…" : "LIVE"}
-        </span>
-        <span className="text-muted-foreground">
-          Last update: <b className="text-foreground">{ago}</b>
-        </span>
-        <span className="text-muted-foreground">
-          Next: <b className="text-foreground">{nextRefresh}</b>
-        </span>
-        <span className="text-muted-foreground">
-          Live items: <b className="text-foreground">{live.length}</b>
-        </span>
-        <span className="text-muted-foreground">
-          New since last refresh: <b className="text-foreground">{newSinceLast}</b>
-        </span>
+    <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur">
+      <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 text-sm">
+        <div className="font-medium text-foreground">Hantavirus Monitor</div>
         <button
-          onClick={() => query.refetch()}
-          disabled={query.isFetching}
-          className="ml-auto border border-border px-2 py-1 text-[10px] tracking-widest hover:border-danger hover:text-danger disabled:opacity-50"
+          onClick={toggle}
+          className="ml-2 border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
         >
-          ↻ REFRESH NOW
+          {mode === "dark" ? "Light" : "Dark"}
         </button>
-      </div>
-      {query.isError && (
-        <div className="mb-3 border border-danger/50 bg-danger/10 p-3 text-xs text-danger">
-          Live feed unavailable — showing curated fallback. ({String(query.error)})
+        <div className="ml-auto flex items-center gap-3">
+          <span className="inline-flex items-center gap-2 text-muted-foreground">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-danger" />
+            Live {now ? now.toISOString().slice(11, 19) : "--:--:--"} UTC
+          </span>
+          <span className="text-muted-foreground">Updated {ago}</span>
+          <span className="rounded-full border border-danger/60 bg-danger px-2 py-0.5 text-[10px] tracking-[0.08em] text-primary-foreground">
+            OUTBREAK {alertLevel === "elevated" ? "ELEVATED" : "NORMAL"}
+          </span>
         </div>
-      )}
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] tracking-widest">
-        <span className="text-muted-foreground">SOURCE</span>
-        {SOURCE_FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setSourceFilter(f)}
-            className={`border px-2 py-1 ${
-              sourceFilter === f
-                ? "border-danger text-danger"
-                : "border-border text-muted-foreground hover:border-danger/60"
-            }`}
-          >
-            {f}
-          </button>
-        ))}
-        <span className="ml-3 text-muted-foreground">CASE</span>
-        {CASE_FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setCaseFilter(f)}
-            className={`border px-2 py-1 ${
-              caseFilter === f
-                ? "border-danger text-danger"
-                : "border-border text-muted-foreground hover:border-danger/60"
-            }`}
-          >
-            {f}
-          </button>
-        ))}
       </div>
-      {sourceHealth.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] tracking-widest">
-          <span className="text-muted-foreground">SOURCE HEALTH</span>
-          {sourceHealth.map((h) => (
-            <span
-              key={h.source}
-              className={`border px-2 py-1 ${
-                h.status === "ok" ? "border-success/60 text-success" : "border-danger/60 text-danger"
-              }`}
-              title={h.detail || ""}
-            >
-              {h.source}:{h.status.toUpperCase()}
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="grid gap-3 md:grid-cols-2">
-        {filtered.map((n) => {
-          const sevCls =
-            n.severity === "CRITICAL"
-              ? "border-danger text-danger"
-              : n.severity === "HIGH"
-                ? "border-accent text-accent"
-                : "border-border text-muted-foreground";
-          return (
-            <a
-              key={n.id}
-              href={n.url}
-              target="_blank"
-              rel="noreferrer"
-              className="group block border border-border bg-surface/60 p-4 transition hover:border-danger/60 hover:bg-surface"
-            >
-              <div className="flex items-center gap-2 text-[10px] tracking-widest">
-                <span className={`border px-1.5 py-0.5 font-bold ${sevCls}`}>
-                  {n.severity}
-                </span>
-                <span className="border border-border px-1.5 py-0.5 text-muted-foreground">
-                  {n.sourceType}
-                </span>
-                <span className="border border-border px-1.5 py-0.5 text-foreground">
-                  {n.caseStatus}
-                </span>
-                <span className={`border px-1.5 py-0.5 ${confidenceCls(n.confidenceLabel)}`}>
-                  CONF {n.confidenceScore}
-                </span>
-                <span className="text-muted-foreground">{n.source}</span>
-                {n.isLive && (
-                  <span className="border border-success/60 px-1 py-0.5 text-[9px] text-success">
-                    LIVE
-                  </span>
-                )}
-                <span className="ml-auto text-muted-foreground">{n.time}</span>
-              </div>
-              <h3 className="mt-2 font-bold leading-snug text-foreground group-hover:text-danger">
-                {n.headline}
-              </h3>
-              <p className="mt-1 text-xs text-muted-foreground">{n.body}</p>
-              <div className="mt-1 text-[10px] text-muted-foreground">
-                WHY: {n.signalReason} · verified {n.lastVerifiedAt.slice(0, 16).replace("T", " ")} UTC
-              </div>
-              <div className="mt-2 text-[10px] tracking-widest text-danger opacity-70">
-                ▸ READ SOURCE
-              </div>
-            </a>
-          );
-        })}
+    </header>
+  );
+}
+
+function StatusBanner({ show }: { show: boolean }) {
+  if (!show) return null;
+  return (
+    <section className="border-b border-danger/40 bg-danger/10">
+      <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 text-sm text-danger">
+        <AlertTriangle className="h-4 w-4" />
+        Situation summary: elevated alert level due to confirmed or critical hantavirus signals.
       </div>
     </section>
   );
 }
 
-function SocialPulse({ query }: { query: ReturnType<typeof useLiveReddit> }) {
-  const posts = query.data?.items ?? [];
-  const lastFetch = query.data?.fetchedAt;
-  const ago = useTimeAgo(lastFetch);
+function RiskPosturePanel() {
+  return (
+    <section className="mx-auto max-w-7xl px-4 pt-4">
+      <div className="border border-border bg-card p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-foreground">Risk posture</span>
+          <span className="rounded-full border border-accent/60 bg-accent/10 px-2 py-0.5 text-[10px] text-accent">
+            {RISK_POSTURE.publicFearLevel}
+          </span>
+        </div>
+        <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+          <div>{RISK_POSTURE.who}</div>
+          <div>{RISK_POSTURE.eu}</div>
+          <div>{RISK_POSTURE.cdc}</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  delta,
+  tone,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: string | number;
+  delta: number;
+  tone: "red" | "amber" | "green";
+  active: boolean;
+  onClick: () => void;
+}) {
+  const toneCls =
+    tone === "red"
+      ? "text-danger border-danger/40"
+      : tone === "amber"
+        ? "text-accent border-accent/40"
+        : "text-success border-success/40";
+
+  return (
+    <button
+      onClick={onClick}
+      className={`group w-full border bg-card p-4 text-left ${toneCls} ${active ? "ring-1 ring-foreground/25" : ""}`}
+    >
+      <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">{label}</div>
+      <div className="mt-1 text-[26px] leading-none font-medium">{value}</div>
+      <div className="mt-2 text-xs text-muted-foreground opacity-70 transition-opacity group-hover:opacity-100">
+        {metricDelta(delta)}
+      </div>
+    </button>
+  );
+}
+
+function MetricsRow({ items }: { items: LiveNewsItem[] }) {
+  type MetricKey = "deaths" | "critical" | "observation" | "lowrisk";
+  const [selectedMetric, setSelectedMetric] = useState<MetricKey>("deaths");
+  const deaths = OUTBREAKS.reduce((sum, o) => sum + o.deaths, 0);
+  const critical = items.filter((x) => x.severity === "CRITICAL").length;
+  const underObservation = OUTBREAKS.filter((x) => x.status === "MONITORING").length;
+  const lowRisk = OUTBREAKS.filter((x) => x.status === "ENDEMIC").length;
+  const sorted = [...items].sort((a, b) => b.iso.localeCompare(a.iso));
+
+  const sourceMap: Record<MetricKey, { title: string; rows: LiveNewsItem[] }> = {
+    deaths: {
+      title: "Sources for deaths",
+      rows: sorted.filter((x) =>
+        /death|deaths|dead|fatal|tote|gestorben/i.test(`${x.headline} ${x.body}`),
+      ),
+    },
+    critical: {
+      title: "Sources for critical cases",
+      rows: sorted.filter(
+        (x) => x.severity === "CRITICAL" || /critical|icu|intensive/i.test(`${x.headline} ${x.body}`),
+      ),
+    },
+    observation: {
+      title: "Sources for under observation",
+      rows: sorted.filter(
+        (x) =>
+          x.caseStatus === "PROBABLE" ||
+          x.caseStatus === "SUSPECTED" ||
+          /monitor|observation|investigation|watch/i.test(`${x.headline} ${x.body}`),
+      ),
+    },
+    lowrisk: {
+      title: "Sources for low risk zones",
+      rows: sorted.filter(
+        (x) =>
+          x.caseStatus === "ADVISORY" ||
+          /low risk|very low|advisory|guidance|endemic|surveillance/i.test(`${x.headline} ${x.body}`),
+      ),
+    },
+  };
+
+  const selected = sourceMap[selectedMetric];
+  const rows = selected.rows.length > 0 ? selected.rows.slice(0, 4) : sorted.slice(0, 4);
+
+  return (
+    <section className="mx-auto max-w-7xl px-4 py-5">
+      <div className="grid gap-3 md:grid-cols-4">
+        <MetricCard
+          label="Deaths"
+          value={deaths}
+          delta={deaths}
+          tone="red"
+          active={selectedMetric === "deaths"}
+          onClick={() => setSelectedMetric("deaths")}
+        />
+        <MetricCard
+          label="Critical"
+          value={critical}
+          delta={critical}
+          tone="red"
+          active={selectedMetric === "critical"}
+          onClick={() => setSelectedMetric("critical")}
+        />
+        <MetricCard
+          label="Under observation"
+          value={underObservation}
+          delta={0}
+          tone="amber"
+          active={selectedMetric === "observation"}
+          onClick={() => setSelectedMetric("observation")}
+        />
+        <MetricCard
+          label="Low risk zones"
+          value={lowRisk}
+          delta={0}
+          tone="green"
+          active={selectedMetric === "lowrisk"}
+          onClick={() => setSelectedMetric("lowrisk")}
+        />
+      </div>
+      <div className="mt-3 border border-border bg-card p-3">
+        <div className="text-xs font-medium text-foreground">{selected.title}</div>
+        <div className="mt-2 space-y-1">
+          {rows.map((x) => (
+            <a
+              key={`${x.url}-${x.iso}`}
+              href={x.url}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-xs text-muted-foreground hover:text-foreground"
+            >
+              {x.source} · {x.time} · {x.headline}
+            </a>
+          ))}
+          {rows.length === 0 && <div className="text-xs text-muted-foreground">No sources found.</div>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AlertFeed({ items }: { items: LiveNewsItem[] }) {
+  return (
+    <div>
+      <SectionHead title="Alert feed" />
+      <div className="space-y-2">
+        {items.slice(0, 8).map((n) => (
+          <a
+            key={`${n.url}-${n.iso}`}
+            href={n.url}
+            target="_blank"
+            rel="noreferrer"
+            className={`relative block border border-border border-l-2 ${alertCardBorder(n.severity)} bg-card p-3`}
+          >
+            <span className={`absolute right-3 top-3 rounded-full border px-2 py-0.5 text-[10px] ${severityPill(n.severity)}`}>
+              {n.severity.toLowerCase()}
+            </span>
+            <h3 className="pr-20 text-[13px] font-medium text-foreground">{n.headline}</h3>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {n.source} · {n.time}
+            </p>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function IncomingTransmissions() {
+  return (
+    <div>
+      <SectionHead title="Incoming transmissions" />
+      <div className="space-y-2">
+        {OUTBREAKS.slice(0, 5).map((o) => {
+          const Icon = transmissionIcon(o);
+          const statusLabel = o.status === "ACTIVE" ? "alert" : o.status === "MONITORING" ? "monitoring" : "tracking";
+          return (
+            <div key={o.id} className="flex items-start gap-3 border border-border bg-card p-3">
+              <Icon className="mt-0.5 h-4 w-4 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-foreground">{o.location}</div>
+                <div className="text-xs text-muted-foreground">{o.note}</div>
+              </div>
+              <span className={`rounded-full border px-2 py-0.5 text-[10px] ${statusClass(o.status)}`}>
+                {statusLabel}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SymptomTimeline() {
+  return (
+    <div className="mt-4">
+      <SectionHead title="Symptom timeline" />
+      <div className="space-y-3">
+        {SYMPTOM_PHASES.map((phase) => (
+          <div key={phase.phase} className="border border-border bg-card p-3">
+            <span
+              className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] ${
+                phase.tone === "red"
+                  ? "border-danger/60 text-danger"
+                  : "border-accent/60 text-accent"
+              }`}
+            >
+              {phase.phase}
+            </span>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {phase.items.map((item) => (
+                <div key={item} className="flex items-center gap-2 border border-border bg-background px-2 py-1 text-xs">
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      phase.tone === "red" ? "bg-danger" : "bg-accent"
+                    }`}
+                  />
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WorldMapSection({ items }: { items: LiveNewsItem[] }) {
+  const dynamic = buildLiveMapSignals(items);
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-6">
-      <SectionHead title="REDDIT PULSE" sub="Public user posts · API feed (30m)" />
-      <div className="mb-3 flex flex-wrap items-center gap-3 border border-border bg-surface/60 px-3 py-2 text-[11px]">
-        <span className="flex items-center gap-2">
-          <span
-            className={`h-2 w-2 rounded-full ${
-              query.isFetching ? "bg-accent blink" : "bg-success"
-            }`}
-          />
-          {query.isFetching ? "FETCHING…" : "LIVE"}
-        </span>
-        <span className="text-muted-foreground">
-          Last update: <b className="text-foreground">{ago}</b>
-        </span>
-        <span className="text-muted-foreground">
-          Posts: <b className="text-foreground">{posts.length}</b>
-        </span>
-      </div>
-      {query.isError && (
-        <div className="border border-danger/50 bg-danger/10 p-3 text-xs text-danger">
-          Reddit feed unavailable. Open search directly:
-          <a
-            href="https://www.reddit.com/search/?q=hantavirus&sort=new"
-            target="_blank"
-            rel="noreferrer"
-            className="ml-1 font-bold underline"
-          >
-            reddit.com/search/?q=hantavirus&sort=new
-          </a>
+      <SectionHead title="World map" />
+      <div className="relative overflow-hidden border border-border bg-card">
+        <OutbreakMap outbreaks={[...OUTBREAKS, ...dynamic]} />
+        <div className="absolute bottom-3 left-3 rounded border border-border bg-card/95 px-3 py-2 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-danger" /> deaths / critical
+          </div>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-accent" /> under observation
+          </div>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-success" /> baseline / clear
+          </div>
         </div>
-      )}
-      {!query.isError && (
-        <div className="grid gap-3 md:grid-cols-2">
-          {posts.map((p) => (
+      </div>
+    </section>
+  );
+}
+
+function PublicPulse({ redditQuery }: { redditQuery: ReturnType<typeof useLiveReddit> }) {
+  const [tab, setTab] = useState<"reddit" | "x">("reddit");
+  const reddit = redditQuery.data?.items ?? [];
+
+  return (
+    <div>
+      <SectionHead title="Public pulse" />
+      <div className="mb-2 flex items-center gap-2 text-xs">
+        <button
+          onClick={() => setTab("reddit")}
+          className={`border px-3 py-1 ${tab === "reddit" ? "border-danger text-danger" : "border-border text-muted-foreground"}`}
+        >
+          Reddit
+        </button>
+        <button
+          onClick={() => setTab("x")}
+          className={`border px-3 py-1 ${tab === "x" ? "border-danger text-danger" : "border-border text-muted-foreground"}`}
+        >
+          Twitter/X
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {tab === "reddit" &&
+          reddit.slice(0, 8).map((p) => (
             <a
               key={p.id}
               href={p.url}
               target="_blank"
               rel="noreferrer"
-              className="group block border border-border bg-surface/60 p-4 transition hover:border-danger/60 hover:bg-surface"
+              className="block border border-border bg-card p-3"
             >
-              <div className="flex items-center gap-2 text-[10px] tracking-widest">
-                <span className="border border-border px-1.5 py-0.5 text-muted-foreground">
-                  r/{p.subreddit}
-                </span>
-                <span className="border border-border px-1.5 py-0.5 text-muted-foreground">
-                  {p.sourceType}
-                </span>
-                <span className="border border-border px-1.5 py-0.5 text-foreground">
-                  {p.caseStatus}
-                </span>
-                <span className={`border px-1.5 py-0.5 ${confidenceCls(p.confidenceLabel)}`}>
-                  CONF {p.confidenceScore}
-                </span>
-                <span className="text-danger">u/{p.author}</span>
-                <span className="ml-auto text-muted-foreground">{p.time}</span>
-              </div>
-              <h3 className="mt-2 font-bold leading-snug text-foreground group-hover:text-danger">
-                {p.title}
-              </h3>
-              {p.body ? <p className="mt-1 text-xs text-muted-foreground">{p.body}</p> : null}
-              <div className="mt-2 text-[10px] tracking-widest text-muted-foreground">
-                SCORE {p.score} · COMMENTS {p.comments}
+              <div className="text-[13px] font-medium text-foreground">{p.title}</div>
+              <div className="mt-2 text-[11px] text-muted-foreground">
+                r/{p.subreddit} · {p.score} upvotes · {p.time}
               </div>
             </a>
           ))}
-          {posts.length === 0 && (
-            <div className="border border-border bg-surface/60 p-4 text-xs text-muted-foreground">
-              No recent reddit signals matched the query in the current window.
-            </div>
-          )}
-        </div>
-      )}
-      <div className="mt-2 text-[11px] text-muted-foreground">
-        Source: Reddit recent search for hantavirus terms. Auto-refresh every 30 minutes.
+
+        {tab === "x" && (
+          <a
+            href="https://x.com/search?q=hantavirus&f=live"
+            target="_blank"
+            rel="noreferrer"
+            className="block border border-border bg-card p-3 text-sm text-muted-foreground"
+          >
+            Open live X search for hantavirus signals.
+          </a>
+        )}
       </div>
-    </section>
+    </div>
   );
 }
 
-function ClinicalPanel() {
+function ERProtocol() {
   return (
-    <section className="mx-auto grid max-w-7xl gap-6 px-4 py-6 md:grid-cols-2">
-      <div>
-        <SectionHead title="SYMPTOM TIMELINE" sub="HCPS / HFRS" />
-        <div className="space-y-3">
-          {SYMPTOMS.map((s) => (
-            <div key={s.phase} className="border border-border bg-surface/60 p-4">
-              <div className="text-[10px] font-bold tracking-[0.2em] text-danger">
-                {s.phase}
-              </div>
-              <ul className="mt-2 space-y-1 text-sm">
-                {s.items.map((it) => (
-                  <li key={it} className="flex items-center gap-2">
-                    <span className="text-danger">▸</span>
-                    {it}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+    <div>
+      <SectionHead title="ER protocol" />
+      <div className="space-y-2">
+        {ER_PROTOCOL.map((step, i) => (
+          <div key={step} className="flex gap-3 border border-border bg-card p-3">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-xs font-medium">
+              {i + 1}
+            </span>
+            <span className="text-sm text-foreground">{step}</span>
+          </div>
+        ))}
       </div>
-      <div>
-        <SectionHead title="ER PROTOCOL" sub="Suspected hantavirus admission" />
-        <ol className="space-y-2 border border-border bg-surface/60 p-4 text-sm">
-          {PROTOCOL.map((p, i) => (
-            <li key={i} className="flex gap-3">
-              <span className="font-mono text-danger">{String(i + 1).padStart(2, "0")}</span>
-              <span>{p}</span>
-            </li>
-          ))}
-        </ol>
-        <div className="mt-3 border border-accent/50 bg-accent/10 p-3 text-xs text-foreground">
-          <b className="text-accent">ADVISORY:</b> Most hantaviruses do NOT spread
-          person-to-person. Andes virus (South America) is the rare exception
-          under investigation in the MV Hondius cluster.
-        </div>
+      <div className="mt-3 border border-accent/60 bg-accent/10 px-3 py-2 text-xs text-foreground">
+        Not a substitute for clinical judgment.
       </div>
-    </section>
+    </div>
   );
 }
 
-function FaqSection() {
+function FAQSection() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-6">
-      <SectionHead title="FAQ" sub="Quick answers" />
-      <div className="space-y-2 border border-border bg-surface/60 p-4 text-sm">
-        {FAQ.map((item) => (
-          <div key={item.q}>
-            <p className="font-bold text-foreground">{item.q}</p>
-            <p className="text-muted-foreground">{item.a}</p>
+      <SectionHead title="FAQ" />
+      <div className="space-y-2">
+        {FAQ_ITEMS.map((item) => (
+          <div key={item.q} className="border border-border bg-card p-3">
+            <div className="text-sm font-medium text-foreground">{item.q}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{item.a}</div>
           </div>
         ))}
       </div>
@@ -975,41 +847,44 @@ function FaqSection() {
   );
 }
 
-function Footer() {
+function SectionHead({ title }: { title: string }) {
   return (
-    <footer className="mt-8 border-t border-border bg-surface/60 px-4 py-6 text-[11px] text-muted-foreground">
-      <div className="mx-auto max-w-7xl">
-        <div>
-          ⚠ Informational dashboard only. Not medical advice. Figures aggregated from
-          WHO DON599, ECDC RRA (6 May 2026), RKI, CDC and verified press as of
-          07 May 2026.
-        </div>
-        <div className="mt-2">
-          Built as an emergency-room style monitor — updates may lag the latest
-          official bulletins. For clinical decisions consult your national public
-          health authority.
-        </div>
-      </div>
-    </footer>
+    <div className="mb-2 border-b border-border pb-2">
+      <h2 className="text-sm font-medium text-foreground">{title}</h2>
+    </div>
   );
 }
 
-function EmergencyRoom() {
-  const liveQuery = useLiveNews();
-  const socialQuery = useLiveReddit();
-  const liveItems = liveQuery.data?.items ?? [];
+function HantavirusMonitor() {
+  const newsQuery = useLiveNews();
+  const redditQuery = useLiveReddit();
+
+  const liveItems = newsQuery.data?.items ?? [];
+  const items = liveItems.length ? liveItems : FALLBACK_NEWS;
+  const alertLevel = levelFromNews(items);
 
   return (
-    <div className="min-h-screen">
-      <TopBar />
-      <Hero />
-      <Stats />
-      <WorldMap liveItems={liveItems} />
-      <NewsFeed query={liveQuery} />
-      <SocialPulse query={socialQuery} />
-      <ClinicalPanel />
-      <FaqSection />
-      <Footer />
+    <div className="min-h-screen bg-background text-foreground">
+      <Topbar alertLevel={alertLevel} refreshedAt={newsQuery.data?.fetchedAt} />
+      <StatusBanner show={alertLevel === "elevated"} />
+      <RiskPosturePanel />
+      <MetricsRow items={items} />
+
+      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-2 md:grid-cols-2">
+        <AlertFeed items={items} />
+        <div>
+          <IncomingTransmissions />
+          <SymptomTimeline />
+        </div>
+      </section>
+
+      <WorldMapSection items={items} />
+
+      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-2 md:grid-cols-2">
+        <PublicPulse redditQuery={redditQuery} />
+        <ERProtocol />
+      </section>
+      <FAQSection />
     </div>
   );
 }

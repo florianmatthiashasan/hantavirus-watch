@@ -43,9 +43,9 @@ export function OutbreakMap({ outbreaks }: { outbreaks: MapOutbreak[] }) {
       });
       mapRef.current = map;
 
-      // Dark tile layer (CARTO)
+      // Light tile layer (CARTO)
       L.tileLayer(
-        "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
         {
           attribution:
             '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -60,7 +60,12 @@ export function OutbreakMap({ outbreaks }: { outbreaks: MapOutbreak[] }) {
 
       for (const o of outbreaks) {
         const color = colorFor(o.status);
-        const radius = Math.max(6, Math.min(22, 6 + Math.sqrt(Math.max(o.cases, 1)) * 2.2));
+        const radius =
+          o.status === "ACTIVE"
+            ? Math.max(7, Math.min(18, 7 + Math.sqrt(Math.max(o.cases, 1)) * 1.8))
+            : o.status === "MONITORING"
+              ? 11
+              : 5;
 
         // pulsing ring for active
         if (o.status === "ACTIVE") {
@@ -79,10 +84,10 @@ export function OutbreakMap({ outbreaks }: { outbreaks: MapOutbreak[] }) {
 
         const marker = L.circleMarker([o.lat, o.lng], {
           radius,
-          color: "#fff",
-          weight: 1.2,
+          color: o.status === "MONITORING" ? color : "#fff",
+          weight: o.status === "MONITORING" ? 2.2 : 1.2,
           fillColor: color,
-          fillOpacity: 0.9,
+          fillOpacity: o.status === "MONITORING" ? 0.14 : 0.9,
         }).addTo(map);
 
         marker.bindPopup(
@@ -119,7 +124,7 @@ export function OutbreakMap({ outbreaks }: { outbreaks: MapOutbreak[] }) {
   return (
     <div
       ref={ref}
-      style={{ height: 500, width: "100%", background: "oklch(0.18 0.02 20)" }}
+      style={{ height: "min(500px, 62vh)", width: "100%", background: "oklch(0.96 0.01 82)" }}
     />
   );
 }

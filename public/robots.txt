@@ -1,5 +1,5 @@
 # robots.txt for Hantavirus Watch
-# Replace https://example.com with your production domain before launch.
+# Replace https://hentavirus-map.com with your production domain before launch.
 
 User-agent: *
 Allow: /
@@ -40,4 +40,4 @@ Allow: /
 # Crawl hints
 Crawl-delay: 2
 
-Sitemap: https://example.com/sitemap.xml
+Sitemap: https://hentavirus-map.com/sitemap.xml
