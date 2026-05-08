@@ -820,6 +820,16 @@ function HantavirusMonitor() {
         <ERProtocol />
       </section>
       <FAQSection />
+      <footer className="mx-auto max-w-7xl px-4 pb-6 text-center text-xs text-muted-foreground">
+        <a
+          href="https://hasanyucedagportfolio.vercel.app/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline-offset-2 hover:underline"
+        >
+          Built by Hasan Yücedag
+        </a>
+      </footer>
     </div>
   );
 }
