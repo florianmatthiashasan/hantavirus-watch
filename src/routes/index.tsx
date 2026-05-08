@@ -829,6 +829,15 @@ function HantavirusMonitor() {
         >
           Built by Hasan Yücedag
         </a>
+        {" · "}
+        <a
+          href="https://buymeacoffee.com/yourdeveloperhsn"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline-offset-2 hover:underline"
+        >
+          Buy me a coffee
+        </a>
       </footer>
     </div>
   );
