@@ -3,7 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, MapPin, Plane, Ship } from "lucide-react";
 import { OutbreakMap } from "@/components/OutbreakMap";
-import { getLiveHantaNews, type LiveNewsItem } from "@/lib/news.functions";
+import {
+  getArcgisCaseStats,
+  getLiveHantaNews,
+  type ArcgisCaseStats,
+  type LiveNewsItem,
+} from "@/lib/news.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -245,7 +250,7 @@ const ER_PROTOCOL = [
 const FAQ_ITEMS = [
   {
     q: "How often is the dashboard updated?",
-    a: "It refreshes automatically every 30 minutes, and you can trigger a manual refresh anytime.",
+    a: "It refreshes automatically every 20 minutes, and you can trigger a manual refresh anytime.",
   },
   {
     q: "Where do the sources come from?",
@@ -268,7 +273,7 @@ const RISK_POSTURE = {
   cdc: "CDC: Rodent exposure remains primary risk; no broad sustained person-to-person spread.",
 };
 
-const REFRESH_MS = 30 * 60 * 1000;
+const REFRESH_MS = 20 * 60 * 1000;
 const DISCLAIMER_STORAGE_KEY = "hanta-disclaimer-accepted";
 const DISCLAIMER_ACCEPTED_VALUE = "v1";
 
@@ -286,6 +291,16 @@ function useLiveNews() {
   return useQuery({
     queryKey: ["hanta-news"],
     queryFn: () => getLiveHantaNews(),
+    refetchInterval: REFRESH_MS,
+    refetchOnWindowFocus: false,
+    staleTime: REFRESH_MS,
+  });
+}
+
+function useArcgisCaseStats() {
+  return useQuery({
+    queryKey: ["arcgis-case-stats"],
+    queryFn: () => getArcgisCaseStats(),
     refetchInterval: REFRESH_MS,
     refetchOnWindowFocus: false,
     staleTime: REFRESH_MS,
@@ -558,16 +573,26 @@ function mergeOutbreakData(base: Outbreak[], live: Outbreak[]) {
   return Array.from(merged.values());
 }
 
-function buildMetricCounts(items: LiveNewsItem[], outbreaks: Outbreak[]) {
+function buildMetricCounts(
+  items: LiveNewsItem[],
+  outbreaks: Outbreak[],
+  arcgisStats?: ArcgisCaseStats,
+) {
   const uniqueItems = dedupeNewsItems(items);
-  const deaths = uniqueItems.filter(isDeathSignal).length;
-  const critical = uniqueItems.filter(
-    (x) => x.severity === "CRITICAL" || x.caseStatus === "CONFIRMED",
-  ).length;
+  const deaths = arcgisStats?.deceased ?? uniqueItems.filter(isDeathSignal).length;
+  const critical =
+    arcgisStats?.confirmed ??
+    uniqueItems.filter((x) => x.severity === "CRITICAL" || x.caseStatus === "CONFIRMED").length;
   const underObservation = outbreaks.filter((x) => x.status === "MONITORING").length;
+  const arcgisObserved = arcgisStats ? arcgisStats.monitoring + arcgisStats.suspected : undefined;
   const lowRisk = outbreaks.filter((x) => x.status === "ENDEMIC").length;
 
-  return { deaths, critical, underObservation, lowRisk };
+  return {
+    deaths,
+    critical,
+    underObservation: arcgisObserved ?? underObservation,
+    lowRisk,
+  };
 }
 
 function Topbar({
@@ -957,7 +982,7 @@ function DisclaimerModal({ onAccept, sources }: { onAccept: () => void; sources:
         </p>
         <button
           onClick={onAccept}
-          className="mt-5 inline-flex w-full items-center justify-center border border-danger/60 bg-danger px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-danger/90"
+          className="mt-5 inline-flex w-full items-center justify-center border border-red-700 bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-700"
         >
           I understand and accept
         </button>
@@ -968,6 +993,7 @@ function DisclaimerModal({ onAccept, sources }: { onAccept: () => void; sources:
 
 function HantavirusMonitor() {
   const newsQuery = useLiveNews();
+  const arcgisStatsQuery = useArcgisCaseStats();
   const [acceptedDisclaimer, setAcceptedDisclaimer] = useState<boolean | null>(null);
 
   const liveItems = newsQuery.data?.items ?? [];
@@ -975,7 +1001,10 @@ function HantavirusMonitor() {
   const items = useMemo(() => dedupeNewsItems(sourceItems), [sourceItems]);
   const liveMapSignals = useMemo(() => buildLiveMapSignals(items), [items]);
   const outbreaks = useMemo(() => mergeOutbreakData(OUTBREAKS, liveMapSignals), [liveMapSignals]);
-  const metricCounts = useMemo(() => buildMetricCounts(items, outbreaks), [items, outbreaks]);
+  const metricCounts = useMemo(
+    () => buildMetricCounts(items, outbreaks, arcgisStatsQuery.data ?? undefined),
+    [items, outbreaks, arcgisStatsQuery.data],
+  );
   const alertLevel = levelFromNews(items);
   const sourceCount = newsQuery.data?.sources ?? 0;
 

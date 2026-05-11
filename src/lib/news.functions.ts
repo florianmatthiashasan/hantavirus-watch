@@ -33,6 +33,16 @@ export type SourceHealth = {
   detail?: string;
 };
 
+export type ArcgisCaseStats = {
+  deceased: number;
+  confirmed: number;
+  suspected: number;
+  monitoring: number;
+  total: number;
+  fetchedAt: string;
+  source: string;
+};
+
 const FEEDS: FeedConfig[] = [
   {
     source: "WHO",
@@ -58,6 +68,8 @@ const KEYWORDS = ["hanta", "hantavirus", "andes virus", "sin nombre", "puumala",
 const CONFIRMED_RE = /\b(confirmed|lab-confirmed|laborconfirmed|rt-pcr positive|pcr positive)\b/i;
 const PROBABLE_RE = /\b(probable|likely|under verification|investigation ongoing)\b/i;
 const SUSPECTED_RE = /\b(suspect|suspected|possible|potential|unconfirmed|mutmasslich|verdacht)\b/i;
+const ARCGIS_CASE_LAYER_URL =
+  "https://services1.arcgis.com/wb4Og4gH5mvzQAIV/arcgis/rest/services/Tracking_Hantavirus_2026/FeatureServer/1";
 
 function stripTags(s: string) {
   const decoded = s
@@ -220,6 +232,68 @@ function pickSignalReason(text: string, caseStatus: CaseStatus) {
   const keyword = KEYWORDS.find((k) => text.includes(k));
   return `keyword=${keyword ?? "hantavirus"}; class=${caseStatus.toLowerCase()}`;
 }
+
+export const getArcgisCaseStats = createServerFn({ method: "GET" }).handler(
+  async (): Promise<ArcgisCaseStats> => {
+    const fetchedAt = new Date().toISOString();
+    const params = new URLSearchParams({
+      where: "1=1",
+      groupByFieldsForStatistics: "STATUS",
+      outStatistics: JSON.stringify([
+        {
+          statisticType: "count",
+          onStatisticField: "OBJECTID",
+          outStatisticFieldName: "count",
+        },
+      ]),
+      f: "json",
+    });
+
+    const res = await fetch(`${ARCGIS_CASE_LAYER_URL}/query?${params.toString()}`, {
+      headers: { "User-Agent": "HantaER/1.0" },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) {
+      throw new Error(`ArcGIS stats fetch failed: HTTP ${res.status}`);
+    }
+
+    const payload = (await res.json()) as {
+      features?: Array<{ attributes?: { STATUS?: string; count?: number } }>;
+      error?: { message?: string };
+    };
+
+    if (payload.error) {
+      throw new Error(payload.error.message ?? "ArcGIS query returned an error");
+    }
+
+    let deceased = 0;
+    let confirmed = 0;
+    let suspected = 0;
+    let monitoring = 0;
+
+    for (const feature of payload.features ?? []) {
+      const status = (feature.attributes?.STATUS ?? "").toUpperCase().trim();
+      const count = Number(feature.attributes?.count ?? 0);
+      if (!Number.isFinite(count) || count < 0) continue;
+
+      if (status === "DECEASED") deceased += count;
+      else if (status === "CONFIRMED") confirmed += count;
+      else if (status === "SUSPECTED") suspected += count;
+      else if (status === "MONITORING") monitoring += count;
+    }
+
+    return {
+      deceased,
+      confirmed,
+      suspected,
+      monitoring,
+      total: deceased + confirmed + suspected + monitoring,
+      fetchedAt,
+      source: ARCGIS_CASE_LAYER_URL,
+    };
+  },
+);
 
 export const getLiveHantaNews = createServerFn({ method: "GET" }).handler(
   async (): Promise<{
