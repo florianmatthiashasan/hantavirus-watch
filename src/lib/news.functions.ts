@@ -43,6 +43,16 @@ export type ArcgisCaseStats = {
   source: string;
 };
 
+export type ArcgisCasePoint = {
+  id: number;
+  caseNumber: number | null;
+  status: string;
+  lastLocation: string;
+  details: string;
+  lat: number;
+  lng: number;
+};
+
 const FEEDS: FeedConfig[] = [
   {
     source: "WHO",
@@ -289,6 +299,71 @@ export const getArcgisCaseStats = createServerFn({ method: "GET" }).handler(
       suspected,
       monitoring,
       total: deceased + confirmed + suspected + monitoring,
+      fetchedAt,
+      source: ARCGIS_CASE_LAYER_URL,
+    };
+  },
+);
+
+export const getArcgisCasePoints = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{ points: ArcgisCasePoint[]; fetchedAt: string; source: string }> => {
+    const fetchedAt = new Date().toISOString();
+    const params = new URLSearchParams({
+      where: "1=1",
+      outFields: "OBJECTID,CASE_,STATUS,LASTLOCATION,DETAILS",
+      returnGeometry: "true",
+      outSR: "4326",
+      f: "json",
+    });
+
+    const res = await fetch(`${ARCGIS_CASE_LAYER_URL}/query?${params.toString()}`, {
+      headers: { "User-Agent": "HantaER/1.0" },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) {
+      throw new Error(`ArcGIS points fetch failed: HTTP ${res.status}`);
+    }
+
+    const payload = (await res.json()) as {
+      features?: Array<{
+        attributes?: {
+          OBJECTID?: number;
+          CASE_?: number;
+          STATUS?: string;
+          LASTLOCATION?: string;
+          DETAILS?: string;
+        };
+        geometry?: { x?: number; y?: number };
+      }>;
+      error?: { message?: string };
+    };
+
+    if (payload.error) {
+      throw new Error(payload.error.message ?? "ArcGIS points query returned an error");
+    }
+
+    const points: ArcgisCasePoint[] = [];
+    for (const feature of payload.features ?? []) {
+      const objectId = Number(feature.attributes?.OBJECTID ?? NaN);
+      const lat = Number(feature.geometry?.y ?? NaN);
+      const lng = Number(feature.geometry?.x ?? NaN);
+      if (!Number.isFinite(objectId) || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+      const caseNumberRaw = Number(feature.attributes?.CASE_);
+      points.push({
+        id: objectId,
+        caseNumber: Number.isFinite(caseNumberRaw) ? caseNumberRaw : null,
+        status: (feature.attributes?.STATUS ?? "").toUpperCase().trim(),
+        lastLocation: (feature.attributes?.LASTLOCATION ?? "").trim(),
+        details: (feature.attributes?.DETAILS ?? "").trim(),
+        lat,
+        lng,
+      });
+    }
+
+    return {
+      points,
       fetchedAt,
       source: ARCGIS_CASE_LAYER_URL,
     };

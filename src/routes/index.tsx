@@ -4,7 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, MapPin, Plane, Ship } from "lucide-react";
 import { OutbreakMap } from "@/components/OutbreakMap";
 import {
+  getArcgisCasePoints,
   getArcgisCaseStats,
+  type ArcgisCasePoint,
   getLiveHantaNews,
   type ArcgisCaseStats,
   type LiveNewsItem,
@@ -307,6 +309,16 @@ function useArcgisCaseStats() {
   });
 }
 
+function useArcgisCasePoints() {
+  return useQuery({
+    queryKey: ["arcgis-case-points"],
+    queryFn: () => getArcgisCasePoints(),
+    refetchInterval: REFRESH_MS,
+    refetchOnWindowFocus: false,
+    staleTime: REFRESH_MS,
+  });
+}
+
 function useClock() {
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
@@ -571,6 +583,33 @@ function mergeOutbreakData(base: Outbreak[], live: Outbreak[]) {
   }
 
   return Array.from(merged.values());
+}
+
+function buildArcgisMapSignals(points: ArcgisCasePoint[]): Outbreak[] {
+  return points.map((point) => {
+    const status = point.status.toUpperCase();
+    const outbreakStatus: Outbreak["status"] =
+      status === "DECEASED" || status === "CONFIRMED"
+        ? "ACTIVE"
+        : status === "SUSPECTED" || status === "MONITORING"
+          ? "MONITORING"
+          : "ENDEMIC";
+
+    const label = point.lastLocation || "Unknown location";
+    const caseLabel = point.caseNumber != null ? `Case ${point.caseNumber}` : `Case #${point.id}`;
+    const detailText = point.details || "No detail provided";
+    return {
+      id: `arcgis-case-${point.id}`,
+      location: `${label} · ${caseLabel}`,
+      country: "ArcGIS case feed",
+      lat: point.lat,
+      lng: point.lng,
+      cases: 1,
+      deaths: status === "DECEASED" ? 1 : 0,
+      status: outbreakStatus,
+      note: `ArcGIS ${status || "UNKNOWN"} · ${detailText}`,
+    };
+  });
 }
 
 function buildMetricCounts(
@@ -994,13 +1033,21 @@ function DisclaimerModal({ onAccept, sources }: { onAccept: () => void; sources:
 function HantavirusMonitor() {
   const newsQuery = useLiveNews();
   const arcgisStatsQuery = useArcgisCaseStats();
+  const arcgisPointsQuery = useArcgisCasePoints();
   const [acceptedDisclaimer, setAcceptedDisclaimer] = useState<boolean | null>(null);
 
   const liveItems = newsQuery.data?.items ?? [];
   const sourceItems = liveItems.length ? liveItems : FALLBACK_NEWS;
   const items = useMemo(() => dedupeNewsItems(sourceItems), [sourceItems]);
   const liveMapSignals = useMemo(() => buildLiveMapSignals(items), [items]);
-  const outbreaks = useMemo(() => mergeOutbreakData(OUTBREAKS, liveMapSignals), [liveMapSignals]);
+  const arcgisMapSignals = useMemo(
+    () => buildArcgisMapSignals(arcgisPointsQuery.data?.points ?? []),
+    [arcgisPointsQuery.data?.points],
+  );
+  const outbreaks = useMemo(
+    () => mergeOutbreakData(mergeOutbreakData(OUTBREAKS, liveMapSignals), arcgisMapSignals),
+    [liveMapSignals, arcgisMapSignals],
+  );
   const metricCounts = useMemo(
     () => buildMetricCounts(items, outbreaks, arcgisStatsQuery.data ?? undefined),
     [items, outbreaks, arcgisStatsQuery.data],
