@@ -269,6 +269,18 @@ const RISK_POSTURE = {
 };
 
 const REFRESH_MS = 30 * 60 * 1000;
+const DISCLAIMER_STORAGE_KEY = "hanta-disclaimer-accepted";
+const DISCLAIMER_ACCEPTED_VALUE = "v1";
+
+function trackAnalyticsEvent(
+  eventName: string,
+  params: Record<string, string | number | boolean> = {},
+) {
+  if (typeof window === "undefined") return;
+  const maybeGtag = (window as Window & { gtag?: (...args: unknown[]) => void }).gtag;
+  if (typeof maybeGtag !== "function") return;
+  maybeGtag("event", eventName, params);
+}
 
 function useLiveNews() {
   return useQuery({
@@ -381,12 +393,93 @@ function isUnderObservationSignal(item: LiveNewsItem) {
   );
 }
 
+function isLowRiskSignal(item: LiveNewsItem) {
+  return (
+    item.caseStatus === "ADVISORY" ||
+    /low risk|very low|advisory|guidance|endemic|surveillance/i.test(
+      `${item.headline} ${item.body}`,
+    )
+  );
+}
+
 function mapRuleForItem(item: LiveNewsItem) {
   const text = `${item.headline} ${item.body}`.toLowerCase();
   return LIVE_LOCATION_RULES.find((rule) => rule.keywords.some((k) => text.includes(k)));
 }
 
+function normalizeNewsText(s: string) {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function canonicalizeNewsUrl(raw: string) {
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    u.hash = "";
+    for (const key of [...u.searchParams.keys()]) {
+      if (/^utm_/i.test(key) || /^(gclid|fbclid|mc_cid|mc_eid|igshid)$/i.test(key)) {
+        u.searchParams.delete(key);
+      }
+    }
+    u.pathname = u.pathname.replace(/\/+$/, "") || "/";
+    const qs = u.searchParams.toString();
+    return `${u.origin}${u.pathname}${qs ? `?${qs}` : ""}`;
+  } catch {
+    return raw.trim();
+  }
+}
+
+function newsEventKey(item: LiveNewsItem) {
+  const headline = normalizeNewsText(item.headline);
+  const body = normalizeNewsText(item.body).slice(0, 140);
+  const url = canonicalizeNewsUrl(item.url);
+  return `${headline}|${body}|${url}`;
+}
+
+function pickPreferredNewsItem(current: LiveNewsItem, next: LiveNewsItem) {
+  const score = (item: LiveNewsItem) => {
+    const sev = item.severity === "CRITICAL" ? 30 : item.severity === "HIGH" ? 16 : 6;
+    const status =
+      item.caseStatus === "CONFIRMED"
+        ? 24
+        : item.caseStatus === "PROBABLE"
+          ? 14
+          : item.caseStatus === "SUSPECTED"
+            ? 6
+            : 0;
+    const source =
+      item.sourceType === "OFFICIAL"
+        ? 15
+        : item.sourceType === "MEDIA"
+          ? 8
+          : item.sourceType === "AGGREGATOR"
+            ? 3
+            : 0;
+    return item.confidenceScore + sev + status + source;
+  };
+
+  const currentScore = score(current);
+  const nextScore = score(next);
+  if (nextScore !== currentScore) return nextScore > currentScore ? next : current;
+  return next.iso > current.iso ? next : current;
+}
+
+function dedupeNewsItems(items: LiveNewsItem[]) {
+  const uniqueByEvent = new Map<string, LiveNewsItem>();
+  for (const item of items) {
+    const key = newsEventKey(item);
+    const existing = uniqueByEvent.get(key);
+    uniqueByEvent.set(key, existing ? pickPreferredNewsItem(existing, item) : item);
+  }
+  return Array.from(uniqueByEvent.values()).sort((a, b) => b.iso.localeCompare(a.iso));
+}
+
 function buildLiveMapSignals(items: LiveNewsItem[]): Outbreak[] {
+  const uniqueItems = dedupeNewsItems(items);
   const bucket = new Map<
     string,
     {
@@ -398,7 +491,7 @@ function buildLiveMapSignals(items: LiveNewsItem[]): Outbreak[] {
     }
   >();
 
-  for (const item of items) {
+  for (const item of uniqueItems) {
     const rule = mapRuleForItem(item);
     if (!rule) continue;
     const current = bucket.get(rule.id) ?? {
@@ -421,20 +514,69 @@ function buildLiveMapSignals(items: LiveNewsItem[]): Outbreak[] {
       x.deaths > 0 || x.critical > 0 ? "ACTIVE" : x.observation > 0 ? "MONITORING" : "ENDEMIC";
 
     return {
-      id: `live-${x.rule.id}`,
-      location: `${x.rule.location} · live signal`,
+      id: x.rule.id,
+      location: x.rule.location,
       country: x.rule.country,
       lat: x.rule.lat,
       lng: x.rule.lng,
       cases: x.cases,
       deaths: x.deaths,
       status,
-      note: `Deaths ${x.deaths} · Critical ${x.critical} · Under observation ${x.observation}`,
+      note: `Live: Deaths ${x.deaths} · Critical ${x.critical} · Under observation ${x.observation}`,
     };
   });
 }
 
-function Topbar({ alertLevel, refreshedAt }: { alertLevel: "normal" | "elevated"; refreshedAt?: string }) {
+function statusRank(status: Outbreak["status"]) {
+  if (status === "ACTIVE") return 3;
+  if (status === "MONITORING") return 2;
+  return 1;
+}
+
+function mergeOutbreakData(base: Outbreak[], live: Outbreak[]) {
+  const merged = new Map<string, Outbreak>(base.map((x) => [x.id, { ...x }]));
+
+  for (const entry of live) {
+    const existing = merged.get(entry.id);
+    if (!existing) {
+      merged.set(entry.id, entry);
+      continue;
+    }
+
+    const liveDominates =
+      entry.cases > 0 || entry.deaths > 0 || statusRank(entry.status) > statusRank(existing.status);
+    merged.set(entry.id, {
+      ...existing,
+      cases: liveDominates ? entry.cases : existing.cases,
+      deaths: liveDominates ? entry.deaths : existing.deaths,
+      status:
+        statusRank(entry.status) > statusRank(existing.status) ? entry.status : existing.status,
+      note: liveDominates ? entry.note : existing.note,
+    });
+  }
+
+  return Array.from(merged.values());
+}
+
+function buildMetricCounts(items: LiveNewsItem[], outbreaks: Outbreak[]) {
+  const uniqueItems = dedupeNewsItems(items);
+  const deaths = uniqueItems.filter(isDeathSignal).length;
+  const critical = uniqueItems.filter(
+    (x) => x.severity === "CRITICAL" || x.caseStatus === "CONFIRMED",
+  ).length;
+  const underObservation = outbreaks.filter((x) => x.status === "MONITORING").length;
+  const lowRisk = outbreaks.filter((x) => x.status === "ENDEMIC").length;
+
+  return { deaths, critical, underObservation, lowRisk };
+}
+
+function Topbar({
+  alertLevel,
+  refreshedAt,
+}: {
+  alertLevel: "normal" | "elevated";
+  refreshedAt?: string;
+}) {
   const now = useClock();
   const { mode, toggle } = useThemeMode();
   const ago = useTimeAgo(refreshedAt);
@@ -532,44 +674,38 @@ function MetricCard({
   );
 }
 
-function MetricsRow({ items }: { items: LiveNewsItem[] }) {
+function MetricsRow({
+  items,
+  metricCounts,
+}: {
+  items: LiveNewsItem[];
+  metricCounts: { deaths: number; critical: number; underObservation: number; lowRisk: number };
+}) {
   type MetricKey = "deaths" | "critical" | "observation" | "lowrisk";
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>("deaths");
-  const deaths = OUTBREAKS.reduce((sum, o) => sum + o.deaths, 0);
-  const critical = items.filter((x) => x.severity === "CRITICAL").length;
-  const underObservation = OUTBREAKS.filter((x) => x.status === "MONITORING").length;
-  const lowRisk = OUTBREAKS.filter((x) => x.status === "ENDEMIC").length;
-  const sorted = [...items].sort((a, b) => b.iso.localeCompare(a.iso));
+  const sorted = dedupeNewsItems(items);
 
   const sourceMap: Record<MetricKey, { title: string; rows: LiveNewsItem[] }> = {
     deaths: {
       title: "Sources for deaths",
-      rows: sorted.filter((x) =>
-        /death|deaths|dead|fatal|tote|gestorben/i.test(`${x.headline} ${x.body}`),
-      ),
+      rows: sorted.filter(isDeathSignal),
     },
     critical: {
       title: "Sources for critical cases",
       rows: sorted.filter(
-        (x) => x.severity === "CRITICAL" || /critical|icu|intensive/i.test(`${x.headline} ${x.body}`),
+        (x) =>
+          x.severity === "CRITICAL" ||
+          x.caseStatus === "CONFIRMED" ||
+          /critical|icu|intensive/i.test(`${x.headline} ${x.body}`),
       ),
     },
     observation: {
       title: "Sources for under observation",
-      rows: sorted.filter(
-        (x) =>
-          x.caseStatus === "PROBABLE" ||
-          x.caseStatus === "SUSPECTED" ||
-          /monitor|observation|investigation|watch/i.test(`${x.headline} ${x.body}`),
-      ),
+      rows: sorted.filter(isUnderObservationSignal),
     },
     lowrisk: {
       title: "Sources for low risk zones",
-      rows: sorted.filter(
-        (x) =>
-          x.caseStatus === "ADVISORY" ||
-          /low risk|very low|advisory|guidance|endemic|surveillance/i.test(`${x.headline} ${x.body}`),
-      ),
+      rows: sorted.filter(isLowRiskSignal),
     },
   };
 
@@ -581,23 +717,23 @@ function MetricsRow({ items }: { items: LiveNewsItem[] }) {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <MetricCard
           label="Deaths"
-          value={deaths}
-          delta={deaths}
+          value={metricCounts.deaths}
+          delta={metricCounts.deaths}
           tone="red"
           active={selectedMetric === "deaths"}
           onClick={() => setSelectedMetric("deaths")}
         />
         <MetricCard
           label="Critical"
-          value={critical}
-          delta={critical}
+          value={metricCounts.critical}
+          delta={metricCounts.critical}
           tone="red"
           active={selectedMetric === "critical"}
           onClick={() => setSelectedMetric("critical")}
         />
         <MetricCard
           label="Under observation"
-          value={underObservation}
+          value={metricCounts.underObservation}
           delta={0}
           tone="amber"
           active={selectedMetric === "observation"}
@@ -605,7 +741,7 @@ function MetricsRow({ items }: { items: LiveNewsItem[] }) {
         />
         <MetricCard
           label="Low risk zones"
-          value={lowRisk}
+          value={metricCounts.lowRisk}
           delta={0}
           tone="green"
           active={selectedMetric === "lowrisk"}
@@ -626,7 +762,9 @@ function MetricsRow({ items }: { items: LiveNewsItem[] }) {
               {x.source} · {x.time} · {x.headline}
             </a>
           ))}
-          {rows.length === 0 && <div className="text-xs text-muted-foreground">No sources found.</div>}
+          {rows.length === 0 && (
+            <div className="text-xs text-muted-foreground">No sources found.</div>
+          )}
         </div>
       </div>
     </section>
@@ -648,7 +786,9 @@ function AlertFeed({ items }: { items: LiveNewsItem[] }) {
           >
             <div className="mb-2 flex items-start justify-between gap-2">
               <h3 className="text-[13px] font-medium leading-5 text-foreground">{n.headline}</h3>
-              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${severityPill(n.severity)}`}>
+              <span
+                className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${severityPill(n.severity)}`}
+              >
                 {n.severity.toLowerCase()}
               </span>
             </div>
@@ -662,22 +802,28 @@ function AlertFeed({ items }: { items: LiveNewsItem[] }) {
   );
 }
 
-function IncomingTransmissions() {
+function IncomingTransmissions({ outbreaks }: { outbreaks: Outbreak[] }) {
   return (
     <div>
       <SectionHead title="Incoming transmissions" />
       <div className="space-y-2">
-        {OUTBREAKS.slice(0, 5).map((o) => {
+        {outbreaks.slice(0, 5).map((o) => {
           const Icon = transmissionIcon(o);
-          const statusLabel = o.status === "ACTIVE" ? "alert" : o.status === "MONITORING" ? "monitoring" : "tracking";
+          const statusLabel =
+            o.status === "ACTIVE" ? "alert" : o.status === "MONITORING" ? "monitoring" : "tracking";
           return (
-            <div key={o.id} className="flex flex-wrap items-start gap-2 border border-border bg-card p-3">
+            <div
+              key={o.id}
+              className="flex flex-wrap items-start gap-2 border border-border bg-card p-3"
+            >
               <Icon className="mt-0.5 h-4 w-4 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-foreground">{o.location}</div>
                 <div className="text-xs text-muted-foreground">{o.note}</div>
               </div>
-              <span className={`rounded-full border px-2 py-0.5 text-[10px] ${statusClass(o.status)}`}>
+              <span
+                className={`rounded-full border px-2 py-0.5 text-[10px] ${statusClass(o.status)}`}
+              >
                 {statusLabel}
               </span>
             </div>
@@ -706,7 +852,10 @@ function SymptomTimeline() {
             </span>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {phase.items.map((item) => (
-                <div key={item} className="flex items-center gap-2 border border-border bg-background px-2 py-1 text-xs">
+                <div
+                  key={item}
+                  className="flex items-center gap-2 border border-border bg-background px-2 py-1 text-xs"
+                >
                   <span
                     className={`h-2 w-2 rounded-full ${
                       phase.tone === "red" ? "bg-danger" : "bg-accent"
@@ -723,14 +872,12 @@ function SymptomTimeline() {
   );
 }
 
-function WorldMapSection({ items }: { items: LiveNewsItem[] }) {
-  const dynamic = buildLiveMapSignals(items);
-
+function WorldMapSection({ outbreaks }: { outbreaks: Outbreak[] }) {
   return (
     <section className="mx-auto max-w-7xl px-4 py-6">
       <SectionHead title="World map" />
       <div className="relative overflow-hidden border border-border bg-card">
-        <OutbreakMap outbreaks={[...OUTBREAKS, ...dynamic]} />
+        <OutbreakMap outbreaks={outbreaks} />
         <div className="m-2 rounded border border-border bg-card/95 px-3 py-2 text-[11px] text-muted-foreground md:absolute md:bottom-3 md:left-3 md:m-0">
           <div className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full bg-danger" /> deaths / critical
@@ -792,29 +939,107 @@ function SectionHead({ title }: { title: string }) {
   );
 }
 
+function DisclaimerModal({ onAccept, sources }: { onAccept: () => void; sources: number }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4">
+      <div className="w-full max-w-xl border border-danger/40 bg-card p-5 shadow-2xl">
+        <h1 className="text-lg font-semibold text-foreground">Important Notice</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
+          This dashboard is for monitoring and informational use only. It is not medical advice, not
+          a diagnosis, and not a substitute for professional clinical judgment.
+        </p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Data is aggregated from official and public feeds (for example WHO, CDC, and curated news
+          RSS). Content can be delayed, incomplete, or wrong.
+        </p>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Active feed sources right now: {sources}
+        </p>
+        <button
+          onClick={onAccept}
+          className="mt-5 inline-flex w-full items-center justify-center border border-danger/60 bg-danger px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-danger/90"
+        >
+          I understand and accept
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function HantavirusMonitor() {
   const newsQuery = useLiveNews();
+  const [acceptedDisclaimer, setAcceptedDisclaimer] = useState<boolean | null>(null);
 
   const liveItems = newsQuery.data?.items ?? [];
-  const items = liveItems.length ? liveItems : FALLBACK_NEWS;
+  const sourceItems = liveItems.length ? liveItems : FALLBACK_NEWS;
+  const items = useMemo(() => dedupeNewsItems(sourceItems), [sourceItems]);
+  const liveMapSignals = useMemo(() => buildLiveMapSignals(items), [items]);
+  const outbreaks = useMemo(() => mergeOutbreakData(OUTBREAKS, liveMapSignals), [liveMapSignals]);
+  const metricCounts = useMemo(() => buildMetricCounts(items, outbreaks), [items, outbreaks]);
   const alertLevel = levelFromNews(items);
+  const sourceCount = newsQuery.data?.sources ?? 0;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isAccepted =
+      window.localStorage.getItem(DISCLAIMER_STORAGE_KEY) === DISCLAIMER_ACCEPTED_VALUE;
+    setAcceptedDisclaimer(isAccepted);
+
+    if (!isAccepted) {
+      trackAnalyticsEvent("disclaimer_view", {
+        page: "home",
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (acceptedDisclaimer !== false) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [acceptedDisclaimer]);
+
+  const handleAcceptDisclaimer = () => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(DISCLAIMER_STORAGE_KEY, DISCLAIMER_ACCEPTED_VALUE);
+    }
+    setAcceptedDisclaimer(true);
+    trackAnalyticsEvent("disclaimer_accept", {
+      page: "home",
+      sources: sourceCount,
+    });
+  };
+
+  if (acceptedDisclaimer === null) {
+    return <div className="min-h-screen bg-background" />;
+  }
+
+  if (!acceptedDisclaimer) {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <DisclaimerModal onAccept={handleAcceptDisclaimer} sources={sourceCount} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Topbar alertLevel={alertLevel} refreshedAt={newsQuery.data?.fetchedAt} />
       <StatusBanner show={alertLevel === "elevated"} />
       <RiskPosturePanel />
-      <MetricsRow items={items} />
+      <MetricsRow items={items} metricCounts={metricCounts} />
 
       <section className="mx-auto grid max-w-7xl gap-6 px-4 py-2 md:grid-cols-2">
         <AlertFeed items={items} />
         <div>
-          <IncomingTransmissions />
+          <IncomingTransmissions outbreaks={outbreaks} />
           <SymptomTimeline />
         </div>
       </section>
 
-      <WorldMapSection items={items} />
+      <WorldMapSection outbreaks={outbreaks} />
 
       <section className="mx-auto max-w-7xl px-4 py-2">
         <ERProtocol />

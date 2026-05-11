@@ -113,7 +113,81 @@ function fmtTime(iso: string) {
 }
 
 function normalizeHeadline(s: string) {
-  return s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeText(s: string) {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function canonicalizeUrl(raw: string) {
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    u.hash = "";
+    // remove common tracking params so same article URL de-dupes reliably
+    for (const key of [...u.searchParams.keys()]) {
+      if (/^utm_/i.test(key) || /^(gclid|fbclid|mc_cid|mc_eid|igshid)$/i.test(key)) {
+        u.searchParams.delete(key);
+      }
+    }
+    u.pathname = u.pathname.replace(/\/+$/, "") || "/";
+    const qs = u.searchParams.toString();
+    return `${u.origin}${u.pathname}${qs ? `?${qs}` : ""}`;
+  } catch {
+    return raw.trim();
+  }
+}
+
+function severityWeight(severity: LiveNewsItem["severity"]) {
+  if (severity === "CRITICAL") return 30;
+  if (severity === "HIGH") return 16;
+  return 6;
+}
+
+function caseStatusWeight(status: CaseStatus) {
+  if (status === "CONFIRMED") return 24;
+  if (status === "PROBABLE") return 14;
+  if (status === "SUSPECTED") return 6;
+  return 0;
+}
+
+function sourceTypeWeight(sourceType: SourceType) {
+  if (sourceType === "OFFICIAL") return 15;
+  if (sourceType === "MEDIA") return 8;
+  if (sourceType === "AGGREGATOR") return 3;
+  return 0;
+}
+
+function newsEventKey(item: LiveNewsItem) {
+  const normalizedHeadline = normalizeHeadline(item.headline);
+  const normalizedBody = normalizeText(item.body).slice(0, 140);
+  const canonicalUrl = canonicalizeUrl(item.url);
+  return `${normalizedHeadline}|${normalizedBody}|${canonicalUrl}`;
+}
+
+function keepPreferredItem(current: LiveNewsItem, next: LiveNewsItem) {
+  const currentRank =
+    current.confidenceScore +
+    severityWeight(current.severity) +
+    caseStatusWeight(current.caseStatus) +
+    sourceTypeWeight(current.sourceType);
+  const nextRank =
+    next.confidenceScore +
+    severityWeight(next.severity) +
+    caseStatusWeight(next.caseStatus) +
+    sourceTypeWeight(next.sourceType);
+
+  if (nextRank !== currentRank) return nextRank > currentRank ? next : current;
+  return next.iso > current.iso ? next : current;
 }
 
 function classifyCaseStatus(text: string): CaseStatus {
@@ -148,7 +222,12 @@ function pickSignalReason(text: string, caseStatus: CaseStatus) {
 }
 
 export const getLiveHantaNews = createServerFn({ method: "GET" }).handler(
-  async (): Promise<{ items: LiveNewsItem[]; fetchedAt: string; sources: number; sourceHealth: SourceHealth[] }> => {
+  async (): Promise<{
+    items: LiveNewsItem[];
+    fetchedAt: string;
+    sources: number;
+    sourceHealth: SourceHealth[];
+  }> => {
     const results: LiveNewsItem[] = [];
     const sourceHealth: SourceHealth[] = [];
 
@@ -211,14 +290,15 @@ export const getLiveHantaNews = createServerFn({ method: "GET" }).handler(
       }),
     );
 
-    // de-dupe by URL + normalized headline
-    const seen = new Set<string>();
-    const unique = results.filter((r) => {
-      const k = `${r.url || ""}|${normalizeHeadline(r.headline)}`;
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    });
+    // de-dupe by canonicalized event signature and keep best-quality evidence per event
+    const uniqueByEvent = new Map<string, LiveNewsItem>();
+    for (const item of results) {
+      const key = newsEventKey(item);
+      const existing = uniqueByEvent.get(key);
+      uniqueByEvent.set(key, existing ? keepPreferredItem(existing, item) : item);
+    }
+
+    const unique = Array.from(uniqueByEvent.values());
 
     unique.sort((a, b) => b.iso.localeCompare(a.iso));
 
