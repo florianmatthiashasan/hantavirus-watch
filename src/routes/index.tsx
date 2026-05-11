@@ -420,15 +420,6 @@ function isUnderObservationSignal(item: LiveNewsItem) {
   );
 }
 
-function isLowRiskSignal(item: LiveNewsItem) {
-  return (
-    item.caseStatus === "ADVISORY" ||
-    /low risk|very low|advisory|guidance|endemic|surveillance/i.test(
-      `${item.headline} ${item.body}`,
-    )
-  );
-}
-
 function mapRuleForItem(item: LiveNewsItem) {
   const text = `${item.headline} ${item.body}`.toLowerCase();
   return LIVE_LOCATION_RULES.find((rule) => rule.keywords.some((k) => text.includes(k)));
@@ -601,36 +592,38 @@ function buildArcgisMapSignals(points: ArcgisCasePoint[]): Outbreak[] {
     return {
       id: `arcgis-case-${point.id}`,
       location: `${label} · ${caseLabel}`,
-      country: "ArcGIS case feed",
+      country: "Case feed",
       lat: point.lat,
       lng: point.lng,
       cases: 1,
       deaths: status === "DECEASED" ? 1 : 0,
       status: outbreakStatus,
-      note: `ArcGIS ${status || "UNKNOWN"} · ${detailText}`,
+      note: `Status ${status || "UNKNOWN"} · ${detailText}`,
     };
   });
 }
 
-function buildMetricCounts(
-  items: LiveNewsItem[],
-  outbreaks: Outbreak[],
-  arcgisStats?: ArcgisCaseStats,
-) {
+function buildMetricCounts(items: LiveNewsItem[], arcgisStats?: ArcgisCaseStats) {
   const uniqueItems = dedupeNewsItems(items);
-  const deaths = arcgisStats?.deceased ?? uniqueItems.filter(isDeathSignal).length;
-  const critical =
+  const dead = arcgisStats?.deceased ?? uniqueItems.filter(isDeathSignal).length;
+  const confirmed =
     arcgisStats?.confirmed ??
     uniqueItems.filter((x) => x.severity === "CRITICAL" || x.caseStatus === "CONFIRMED").length;
-  const underObservation = outbreaks.filter((x) => x.status === "MONITORING").length;
-  const arcgisObserved = arcgisStats ? arcgisStats.monitoring + arcgisStats.suspected : undefined;
-  const lowRisk = outbreaks.filter((x) => x.status === "ENDEMIC").length;
+  const suspected =
+    arcgisStats?.suspected ??
+    uniqueItems.filter(
+      (x) =>
+        x.caseStatus === "SUSPECTED" ||
+        x.caseStatus === "PROBABLE" ||
+        /suspected|possible|unconfirmed|monitor|observation|investigation/i.test(
+          `${x.headline} ${x.body}`,
+        ),
+    ).length;
 
   return {
-    deaths,
-    critical,
-    underObservation: arcgisObserved ?? underObservation,
-    lowRisk,
+    suspected,
+    confirmed,
+    dead,
   };
 }
 
@@ -743,33 +736,35 @@ function MetricsRow({
   metricCounts,
 }: {
   items: LiveNewsItem[];
-  metricCounts: { deaths: number; critical: number; underObservation: number; lowRisk: number };
+  metricCounts: { suspected: number; confirmed: number; dead: number };
 }) {
-  type MetricKey = "deaths" | "critical" | "observation" | "lowrisk";
-  const [selectedMetric, setSelectedMetric] = useState<MetricKey>("deaths");
+  type MetricKey = "suspected" | "confirmed" | "dead";
+  const [selectedMetric, setSelectedMetric] = useState<MetricKey>("suspected");
   const sorted = dedupeNewsItems(items);
 
   const sourceMap: Record<MetricKey, { title: string; rows: LiveNewsItem[] }> = {
-    deaths: {
-      title: "Sources for deaths",
-      rows: sorted.filter(isDeathSignal),
-    },
-    critical: {
-      title: "Sources for critical cases",
+    suspected: {
+      title: "Sources for suspected cases",
       rows: sorted.filter(
         (x) =>
-          x.severity === "CRITICAL" ||
-          x.caseStatus === "CONFIRMED" ||
-          /critical|icu|intensive/i.test(`${x.headline} ${x.body}`),
+          x.caseStatus === "SUSPECTED" ||
+          x.caseStatus === "PROBABLE" ||
+          /suspected|possible|unconfirmed|monitor|observation|investigation/i.test(
+            `${x.headline} ${x.body}`,
+          ),
       ),
     },
-    observation: {
-      title: "Sources for under observation",
-      rows: sorted.filter(isUnderObservationSignal),
+    confirmed: {
+      title: "Sources for confirmed cases",
+      rows: sorted.filter(
+        (x) =>
+          x.caseStatus === "CONFIRMED" ||
+          /confirmed|lab-confirmed|positive test|pcr/i.test(`${x.headline} ${x.body}`),
+      ),
     },
-    lowrisk: {
-      title: "Sources for low risk zones",
-      rows: sorted.filter(isLowRiskSignal),
+    dead: {
+      title: "Sources for deceased cases",
+      rows: sorted.filter(isDeathSignal),
     },
   };
 
@@ -778,38 +773,30 @@ function MetricsRow({
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-5">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <MetricCard
-          label="Deaths"
-          value={metricCounts.deaths}
-          delta={metricCounts.deaths}
-          tone="red"
-          active={selectedMetric === "deaths"}
-          onClick={() => setSelectedMetric("deaths")}
-        />
-        <MetricCard
-          label="Critical"
-          value={metricCounts.critical}
-          delta={metricCounts.critical}
-          tone="red"
-          active={selectedMetric === "critical"}
-          onClick={() => setSelectedMetric("critical")}
-        />
-        <MetricCard
-          label="Under observation"
-          value={metricCounts.underObservation}
-          delta={0}
+          label="Suspected"
+          value={metricCounts.suspected}
+          delta={metricCounts.suspected}
           tone="amber"
-          active={selectedMetric === "observation"}
-          onClick={() => setSelectedMetric("observation")}
+          active={selectedMetric === "suspected"}
+          onClick={() => setSelectedMetric("suspected")}
         />
         <MetricCard
-          label="Low risk zones"
-          value={metricCounts.lowRisk}
-          delta={0}
-          tone="green"
-          active={selectedMetric === "lowrisk"}
-          onClick={() => setSelectedMetric("lowrisk")}
+          label="Confirmed"
+          value={metricCounts.confirmed}
+          delta={metricCounts.confirmed}
+          tone="red"
+          active={selectedMetric === "confirmed"}
+          onClick={() => setSelectedMetric("confirmed")}
+        />
+        <MetricCard
+          label="Dead"
+          value={metricCounts.dead}
+          delta={metricCounts.dead}
+          tone="red"
+          active={selectedMetric === "dead"}
+          onClick={() => setSelectedMetric("dead")}
         />
       </div>
       <div className="mt-3 border border-border bg-card p-3">
@@ -1049,8 +1036,8 @@ function HantavirusMonitor() {
     [liveMapSignals, arcgisMapSignals],
   );
   const metricCounts = useMemo(
-    () => buildMetricCounts(items, outbreaks, arcgisStatsQuery.data ?? undefined),
-    [items, outbreaks, arcgisStatsQuery.data],
+    () => buildMetricCounts(items, arcgisStatsQuery.data ?? undefined),
+    [items, arcgisStatsQuery.data],
   );
   const alertLevel = levelFromNews(items);
   const sourceCount = newsQuery.data?.sources ?? 0;
